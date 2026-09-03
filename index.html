@@ -1,10 +1,9 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<!-- 本工作台通过 WorkBuddy 资料库能力（library skill）搭建、存储和部署 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>小a SQL语法练习平台</title>
+<title>SQL 财务分析练习台</title>
 <style>
   :root{
     --bg:#f4f6fb; --card:#ffffff; --ink:#1f2937; --muted:#6b7280; --border:#e6e9f0;
@@ -156,12 +155,13 @@
   <symbol id="ic-save" viewBox="0 0 24 24"><path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm3-10H5V5h10v4z"/></symbol>
   <symbol id="ic-star" viewBox="0 0 24 24"><path d="M12 2l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.8 6.1 20l1.2-6.5L2.5 8.9 9.1 8z"/></symbol>
   <symbol id="ic-link" viewBox="0 0 24 24"><path d="M3.9 12a3.1 3.1 0 0 1 3.1-3.1h4V7H7a5 5 0 0 0 0 10h4v-1.9H7A3.1 3.1 0 0 1 3.9 12zM8 13h8v-2H8v2zm9-6h-4v1.9h4a3.1 3.1 0 0 1 0 6.2h-4V17h4a5 5 0 0 0 0-10z"/></symbol>
+  <symbol id="ic-upload" viewBox="0 0 24 24"><path d="M12 3l5 5h-3v6h-4V8H7l5-5zM5 18h14v2H5v-2z"/></symbol>
 </svg>
 <header class="topbar">
   <div class="row">
     <span class="logo" id="logo"><svg class="logo-ico"><use href="#ic-db"/></svg></span>
     <div class="titlebox">
-      <h1>小a SQL语法练习平台</h1>
+      <h1>SQL 财务分析练习台</h1>
       <p>新手练 SQL · 虚拟财务数据 · 中文语法速查</p>
     </div>
     <span class="spacer"></span>
@@ -190,9 +190,12 @@
       <div class="chip-row" id="tableList"></div>
       <div id="schema"></div>
       <div style="margin:10px 0">
+        <button class="btn btn-primary" id="importDataBtn"><svg class="ico"><use href="#ic-upload"/></svg>导入我的 Excel / CSV</button>
         <button class="btn btn-ghost" id="refreshDataBtn"><svg class="ico"><use href="#ic-refresh"/></svg>刷新视图</button>
         <button class="btn btn-ghost" id="resetBtn"><svg class="ico"><use href="#ic-reset"/></svg>重置为初始数据</button>
+        <input type="file" id="importFile" accept=".xlsx,.csv,.tsv,.txt" style="display:none">
       </div>
+      <div id="importHint" class="hint" style="display:none"></div>
       <div id="preview"></div>
     </div>
   </section>
@@ -242,7 +245,7 @@
 
 <!-- 引擎（占位，构建时注入） -->
 <script>/* =========================================================================
- * 小a SQL语法练习平台 —— 纯 JS 浏览器内 SQL 引擎 + 虚拟财务数据
+ * SQL 财务分析练习台 —— 纯 JS 浏览器内 SQL 引擎 + 虚拟财务数据
  * 零外部依赖。支持：SELECT / WHERE / GROUP BY / HAVING / ORDER BY / LIMIT /
  * JOIN(INNER/LEFT/RIGHT) / 聚合函数 / 常用标量函数 / INSERT / UPDATE /
  * DELETE / CREATE TABLE / DROP TABLE / DISTINCT / LIKE / IN / BETWEEN / IS NULL
@@ -388,6 +391,9 @@ function buildDB() {
 
 /* ======================== SQL 引擎 ======================== */
 
+let ACTIVE_DB = null;
+let WIN_CACHE = new Map();
+
 function tokenize(sql) {
   const tokens = [];
   let i = 0;
@@ -473,6 +479,11 @@ function parse(sql0) {
     }
     if (isKw('IN')) {
       next(); eatOp('(');
+      if (isKw('SELECT')) {
+        const sub = parseSelect(true);
+        eatOp(')');
+        return { type: 'bin', op: 'IN_SUBQUERY', left, sub };
+      }
       const list = [];
       if (!isOp(')')) {
         list.push(parseValue());
@@ -525,10 +536,20 @@ function parse(sql0) {
     return parsePrimary();
   }
   function parsePrimary() {
+    if (isKw('CASE')) return parseCase();
     if (cur().t === 'num') return { type: 'lit', value: next().v };
     if (cur().t === 'str') return { type: 'lit', value: next().v };
     if (isKw('NULL')) { next(); return { type: 'lit', value: null }; }
-    if (cur().t === 'op' && cur().v === '(') { next(); const e = parseExpr(); eatOp(')'); return e; }
+    if (cur().t === 'op' && cur().v === '(') {
+      const ahead = tokens[p + 1];
+      if (ahead && ahead.t === 'ident' && ahead.v.toUpperCase() === 'SELECT') {
+        next();
+        const sub = parseSelect(true);
+        eatOp(')');
+        return { type: 'scalar_subquery', ast: sub };
+      }
+      next(); const e = parseExpr(); eatOp(')'); return e;
+    }
     if (cur().t === 'ident') {
       const name = next().v;
       // 函数?
@@ -537,11 +558,15 @@ function parse(sql0) {
         const fname = name.toUpperCase();
         const AGG = ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'];
         if (AGG.includes(fname)) {
-          if (fname === 'COUNT' && cur().t === 'op' && cur().v === '*') { next(); eatOp(')'); return { type: 'agg', fn: 'COUNT', arg: '*' }; }
-          let distinct = false;
-          if (acceptKw('DISTINCT')) distinct = true;
-          const arg = parseExpr();
+          let arg = null, distinct = false;
+          if (fname === 'COUNT' && cur().t === 'op' && cur().v === '*') { next(); arg = '*'; }
+          else {
+            if (acceptKw('DISTINCT')) distinct = true;
+            arg = parseExpr();
+          }
           eatOp(')');
+          const over = parseOver();
+          if (over) return { type: 'win', fn: fname, arg, distinct, partitionBy: over.partitionBy, orderBy: over.orderBy };
           return { type: 'agg', fn: fname, arg, distinct };
         }
         const args = [];
@@ -550,6 +575,8 @@ function parse(sql0) {
           while (acceptOp(',')) args.push(parseExpr());
         }
         eatOp(')');
+        const over = parseOver();
+        if (over) return { type: 'win', fn: fname, args, partitionBy: over.partitionBy, orderBy: over.orderBy };
         return { type: 'func', name: fname, args };
       }
       // 列引用（可能 table.col）
@@ -565,6 +592,48 @@ function parse(sql0) {
     throw new Error('无法解析表达式，遇到：' + (cur().t === 'eof' ? '语句结尾' : cur().v));
   }
 
+  function parseOver() {
+    if (!isKw('OVER')) return null;
+    next();
+    eatOp('(');
+    const partitionBy = [];
+    const orderBy = [];
+    if (acceptKw('PARTITION')) {
+      eatKw('BY');
+      partitionBy.push(parseExpr());
+      while (acceptOp(',')) partitionBy.push(parseExpr());
+    }
+    if (acceptKw('ORDER')) {
+      eatKw('BY');
+      do {
+        const e = parseExpr();
+        let dir = 'ASC';
+        if (isKw('ASC')) next();
+        else if (isKw('DESC')) { next(); dir = 'DESC'; }
+        orderBy.push({ expr: e, dir });
+      } while (acceptOp(','));
+    }
+    eatOp(')');
+    return { partitionBy, orderBy };
+  }
+
+  function parseCase() {
+    eatKw('CASE');
+    let operand = null;
+    if (!isKw('WHEN')) operand = parseExpr();
+    const whens = [];
+    while (acceptKw('WHEN')) {
+      const cond = parseExpr();
+      eatKw('THEN');
+      const then = parseExpr();
+      whens.push({ cond, then });
+    }
+    let els = null;
+    if (acceptKw('ELSE')) els = parseExpr();
+    eatKw('END');
+    return { type: 'case', operand, whens, els };
+  }
+
   // ---- 顶层语句 ----
   const lc = cur().v ? cur().v.toUpperCase() : '';
   if (lc === 'SELECT') return parseSelect();
@@ -575,7 +644,7 @@ function parse(sql0) {
   if (lc === 'DROP') return parseDrop();
   throw new Error('仅支持 SELECT / INSERT / UPDATE / DELETE / CREATE / DROP 语句');
 
-  function parseSelect() {
+  function parseSelect(nested) {
     eatKw('SELECT');
     const distinct = acceptKw('DISTINCT');
     const items = [];
@@ -619,11 +688,24 @@ function parse(sql0) {
       if (cur().t === 'num') { limit = next().v; if (acceptKw('OFFSET') && cur().t === 'num') offset = next().v; }
       else throw new Error('LIMIT 后需为数字');
     }
-    if (cur().t !== 'eof') throw new Error('语句末尾存在多余内容：' + cur().v);
+    if (!nested && cur().t !== 'eof') throw new Error('语句末尾存在多余内容：' + cur().v);
     return { kind: 'select', distinct, items, from, joins, where, groupBy, having, orderBy, limit, offset };
   }
 
   function parseTableRef() {
+    if (cur().t === 'op' && cur().v === '(') {
+      const ahead = tokens[p + 1];
+      if (ahead && ahead.t === 'ident' && ahead.v.toUpperCase() === 'SELECT') {
+        next();
+        const sub = parseSelect(true);
+        eatOp(')');
+        let alias = null;
+        if (acceptKw('AS')) { if (cur().t === 'ident') alias = next().v; }
+        else if (cur().t === 'ident' && !RESERVED.has(cur().v.toUpperCase())) alias = next().v;
+        if (!alias) throw new Error('FROM 子查询必须起别名，例如：FROM (SELECT ...) t');
+        return { name: null, alias, subquery: sub };
+      }
+    }
     if (cur().t !== 'ident') throw new Error('缺少表名');
     const name = next().v;
     let alias = null;
@@ -771,6 +853,11 @@ function evalExpr(node, row, groupRows) {
       if (op === 'ISNULL') return (l === null || l === undefined) === node.isNull;
       if (op === 'LIKE') return likeOp(l, evalExpr(node.right, row, groupRows));
       if (op === 'IN') return node.list.some((v) => cmpOp('=', l, v.value));
+      if (op === 'IN_SUBQUERY') {
+        if (!ACTIVE_DB) throw new Error('子查询执行失败：缺少数据库上下文');
+        const res = executeSelect(node.sub, ACTIVE_DB);
+        return res.rows.some((r) => cmpOp('=', l, r[0]));
+      }
       if (op === 'BETWEEN') return cmpOp('>=', l, evalExpr(node.low, row, groupRows)) && cmpOp('<=', l, evalExpr(node.high, row, groupRows));
       const r = evalExpr(node.right, row, groupRows);
       if (['=', '!=', '<>', '<', '>', '<=', '>='].includes(op)) return cmpOp(op, l, r);
@@ -784,6 +871,31 @@ function evalExpr(node, row, groupRows) {
     case 'func': return callFunc(node.name, node.args.map((a) => evalExpr(a, row, groupRows)));
     case 'agg':
       return evalAgg(node, groupRows);
+    case 'case': {
+      if (node.operand) {
+        const ov = evalExpr(node.operand, row, groupRows);
+        for (const w of node.whens) {
+          if (cmpOp('=', ov, evalExpr(w.cond, row, groupRows))) return evalExpr(w.then, row, groupRows);
+        }
+      } else {
+        for (const w of node.whens) {
+          if (truthy(evalExpr(w.cond, row, groupRows))) return evalExpr(w.then, row, groupRows);
+        }
+      }
+      return node.els ? evalExpr(node.els, row, groupRows) : null;
+    }
+    case 'scalar_subquery': {
+      if (!ACTIVE_DB) throw new Error('子查询执行失败：缺少数据库上下文');
+      const res = executeSelect(node.ast, ACTIVE_DB);
+      if (!res.rows.length) return null;
+      return res.rows[0][0];
+    }
+    case 'win': {
+      const idx = row ? row.__winIdx : undefined;
+      const cache = WIN_CACHE.get(node);
+      if (cache && idx !== undefined && cache.has(idx)) return cache.get(idx);
+      return null;
+    }
   }
   throw new Error('无法求值的表达式节点');
 }
@@ -822,6 +934,18 @@ function evalAgg(node, groupRows) {
 
 /* ---------- 执行 ---------- */
 function loadTable(ref, db) {
+  if (ref.subquery) {
+    const res = executeSelect(ref.subquery, db);
+    const cols = res.columns.map(String);
+    const alias = (ref.alias || 'sub').toLowerCase();
+    const out = [];
+    for (const r of res.rows) {
+      const row = {};
+      cols.forEach((c, i) => { row[c] = r[i]; row[alias + '.' + c] = r[i]; });
+      out.push(row);
+    }
+    return { rows: out, alias, tableName: null, cols };
+  }
   const key = Object.keys(db).find((k) => k.toLowerCase() === ref.name.toLowerCase());
   if (!key) throw new Error('表不存在：' + ref.name);
   const t = db[key];
@@ -920,6 +1044,24 @@ function executeSelect(ast, db) {
     columns.push({ key: header, header, expr: it.expr });
   }
 
+  rows.forEach((r, i) => { if (r && typeof r === 'object') r.__winIdx = i; });
+  {
+    const winNodes = [];
+    const collectWin = (nd) => {
+      if (!nd || typeof nd !== 'object') return;
+      if (nd.type === 'win') { if (!winNodes.includes(nd)) winNodes.push(nd); return; }
+      if (nd.type === 'bin') { collectWin(nd.left); collectWin(nd.right); collectWin(nd.low); collectWin(nd.high); return; }
+      if (nd.type === 'unary') { collectWin(nd.expr); return; }
+      if (nd.type === 'func') { (nd.args || []).forEach(collectWin); return; }
+      if (nd.type === 'case') { collectWin(nd.operand); (nd.whens || []).forEach((w) => { collectWin(w.cond); collectWin(w.then); }); collectWin(nd.els); }
+    };
+    for (const col of columns) collectWin(col.expr);
+    for (const o of ast.orderBy) collectWin(o.expr);
+    collectWin(ast.having);
+    WIN_CACHE = new Map();
+    for (const wn of winNodes) WIN_CACHE.set(wn, computeWindow(wn, rows));
+  }
+
   // 生成中间结果（含 group 引用用于 HAVING）
   let inter = [];
   if (needGroup) {
@@ -978,6 +1120,87 @@ function executeSelect(ast, db) {
   return { columns: columns.map((c) => c.header), rows: outRows, rowCount: outRows.length };
 }
 
+function aggOf(fn, arr) {
+  if (fn === 'COUNT') return arr.length;
+  const nums = arr.map(toNum);
+  if (!nums.length) return fn === 'SUM' ? 0 : null;
+  if (fn === 'SUM') return nums.reduce((a, b) => a + b, 0);
+  if (fn === 'AVG') return nums.reduce((a, b) => a + b, 0) / nums.length;
+  if (fn === 'MIN') return Math.min.apply(null, nums);
+  if (fn === 'MAX') return Math.max.apply(null, nums);
+  return null;
+}
+
+function computeWindow(winNode, rows) {
+  const result = new Map();
+  const partitions = new Map();
+  rows.forEach((r, idx) => {
+    const key = winNode.partitionBy && winNode.partitionBy.length
+      ? JSON.stringify(winNode.partitionBy.map((e) => evalExpr(e, r, [r])))
+      : '__ALL__';
+    if (!partitions.has(key)) partitions.set(key, []);
+    partitions.get(key).push(idx);
+  });
+  const orderBy = winNode.orderBy || [];
+  const cmpRows = (ia, ib) => {
+    for (const o of orderBy) {
+      const va = evalExpr(o.expr, rows[ia], [rows[ia]]);
+      const vb = evalExpr(o.expr, rows[ib], [rows[ib]]);
+      let cmp;
+      if (typeof va === 'number' && typeof vb === 'number') cmp = va - vb;
+      else {
+        const sa = String(va == null ? '' : va), sb = String(vb == null ? '' : vb);
+        cmp = sa < sb ? -1 : sa > sb ? 1 : 0;
+      }
+      if (cmp !== 0) return o.dir === 'DESC' ? -cmp : cmp;
+    }
+    return ia - ib;
+  };
+  for (const idxs of partitions.values()) {
+    const sorted = idxs.slice().sort(cmpRows);
+    const fn = (winNode.fn || '').toUpperCase();
+    if (fn === 'ROW_NUMBER') {
+      sorted.forEach((idx, i) => result.set(idx, i + 1));
+    } else if (fn === 'RANK' || fn === 'DENSE_RANK') {
+      const keys = sorted.map((idx) => (orderBy.length ? JSON.stringify(orderBy.map((o) => evalExpr(o.expr, rows[idx], [rows[idx]]))) : '__S__'));
+      if (fn === 'DENSE_RANK') {
+        let dense = 0;
+        sorted.forEach((idx, i) => {
+          if (i === 0 || keys[i] !== keys[i - 1]) dense++;
+          result.set(idx, dense);
+        });
+      } else {
+        sorted.forEach((idx, i) => {
+          let firstSame = i;
+          while (firstSame > 0 && keys[firstSame - 1] === keys[i]) firstSame--;
+          result.set(idx, firstSame + 1);
+        });
+      }
+    } else if (['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'].includes(fn)) {
+      const argExpr = winNode.arg !== undefined ? winNode.arg : (winNode.args && winNode.args[0]);
+      const getVal = (idx) => {
+        if (fn === 'COUNT' && (argExpr === '*' || argExpr == null)) return 1;
+        if (argExpr == null || argExpr === '*') return null;
+        return evalExpr(argExpr, rows[idx], [rows[idx]]);
+      };
+      if (orderBy.length) {
+        const acc = [];
+        sorted.forEach((idx) => {
+          const v = getVal(idx);
+          if (v !== null && v !== undefined) acc.push(v);
+          result.set(idx, aggOf(fn, acc));
+        });
+      } else {
+        const all = [];
+        sorted.forEach((idx) => { const v = getVal(idx); if (v !== null && v !== undefined) all.push(v); });
+        const total = aggOf(fn, all);
+        sorted.forEach((idx) => result.set(idx, total));
+      }
+    }
+  }
+  return result;
+}
+
 function lastJoinedRow(ast, db) {
   // 当结果为空且含 * 时用于推断列
   const fromMeta = loadTable(ast.from, db);
@@ -997,10 +1220,14 @@ function containsAgg(node) {
   if (node.type === 'bin') return containsAgg(node.left) || containsAgg(node.right) || (node.low && containsAgg(node.low)) || (node.high && containsAgg(node.high));
   if (node.type === 'unary') return containsAgg(node.expr);
   if (node.type === 'func') return node.args.some((a) => containsAgg(a));
+  if (node.type === 'case') return containsAgg(node.operand) || node.whens.some((w) => containsAgg(w.cond) || containsAgg(w.then)) || containsAgg(node.els);
   return false;
 }
 
 function exprText(node) {
+  if (node.type === 'case') return 'CASE';
+  if (node.type === 'win') return node.fn + '() OVER';
+  if (node.type === 'scalar_subquery') return '(subquery)';
   if (node.type === 'col') return node.name;
   if (node.type === 'lit') return node.value == null ? 'NULL' : (typeof node.value === 'number' ? String(node.value) : "'" + node.value + "'");
   if (node.type === 'agg') return node.fn + '(' + (node.arg === '*' ? '*' : exprText(node.arg)) + ')';
@@ -1064,15 +1291,55 @@ function executeDML(ast, db) {
 }
 
 function runSQL(sql, db) {
-  const ast = parse(sql);
-  if (ast.kind === 'select') return executeSelect(ast, db);
-  return executeDML(ast, db);
+  const prev = ACTIVE_DB;
+  ACTIVE_DB = db;
+  try {
+    const ast = parse(sql);
+    if (ast.kind === 'select') return executeSelect(ast, db);
+    return executeDML(ast, db);
+  } finally { ACTIVE_DB = prev; }
 }
 
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { buildDB, runSQL, tokenize, parse };
+}
+
+/* ======================== 测试 ======================== */
+if (typeof require !== 'undefined' && require.main === module) {
+  const db = buildDB();
+  const tests = [
+    "SELECT * FROM vouchers LIMIT 3",
+    "SELECT vid, date, amount FROM vouchers WHERE amount > 100000 ORDER BY amount DESC LIMIT 5",
+    "SELECT dept_id, direction, SUM(amount) AS total FROM vouchers GROUP BY dept_id, direction ORDER BY dept_id, direction",
+    "SELECT acc_code, COUNT(*) AS cnt, SUM(amount) AS amt FROM vouchers GROUP BY acc_code ORDER BY amt DESC",
+    "SELECT d.dept_name, SUM(v.amount) AS expense FROM vouchers v JOIN departments d ON v.dept_id = d.dept_id WHERE v.acc_code = '6601' GROUP BY d.dept_name ORDER BY expense DESC",
+    "SELECT * FROM vouchers WHERE summary LIKE '%应收%' LIMIT 5",
+    "SELECT * FROM vouchers WHERE dept_id IN (1,2,3) AND direction = '借' LIMIT 3",
+    "SELECT * FROM vouchers WHERE amount BETWEEN 50000 AND 60000 LIMIT 3",
+    "SELECT dept_id, COUNT(*) AS cnt FROM vouchers GROUP BY dept_id HAVING COUNT(*) > 100",
+    "SELECT DISTINCT acc_type FROM accounts",
+    "SELECT YEAR(date) AS yr, MONTH(date) AS mo, SUM(amount) AS revenue FROM vouchers WHERE acc_code = '6001' AND direction = '贷' GROUP BY YEAR(date), MONTH(date) ORDER BY yr, mo",
+    "SELECT c.cust_name, SUM(v.amount) AS ar FROM vouchers v JOIN customers c ON v.cust_id = c.cust_id WHERE v.acc_code = '1122' AND v.direction = '借' GROUP BY c.cust_name ORDER BY ar DESC",
+    "SELECT d.dept_name, b.month, SUM(v.amount) AS actual FROM vouchers v JOIN departments d ON v.dept_id = d.dept_id JOIN budgets b ON b.dept_id = v.dept_id AND b.month = SUBSTR(v.date,1,7) AND b.acc_code = v.acc_code WHERE v.acc_code = '6601' GROUP BY d.dept_name, b.month ORDER BY d.dept_name, b.month LIMIT 6",
+  ];
+  let pass = 0;
+  for (const t of tests) {
+    try {
+      const r = runSQL(t, db);
+      console.log('✓', t.slice(0, 70));
+      console.log('   cols:', r.columns.join(', '), '| rows:', r.rowCount);
+      if (r.rows[0]) console.log('   sample:', JSON.stringify(r.rows[0]).slice(0, 160));
+      pass++;
+    } catch (e) {
+      console.log('✗', t.slice(0, 70), '\n   错误:', e.message);
+    }
+  }
+  console.log(`\n通过 ${pass}/${tests.length}`);
+}
 </script>
 <!-- 界面逻辑 -->
 <script>/* ============================================================
- * 小a SQL语法练习平台 —— 界面与交互逻辑（浏览器端）
+ * SQL 财务分析练习台 —— 界面与交互逻辑（浏览器端）
  * 依赖：sql_engine.js 暴露的 buildDB() / runSQL()
  * ============================================================ */
 (function () {
@@ -1398,6 +1665,22 @@ function runSQL(sql, db) {
       { d: '三表连接（凭证+部门+客户）', s: "SELECT c.cust_name, SUM(v.amount) AS 应收 FROM vouchers v JOIN customers c ON v.cust_id = c.cust_id WHERE v.acc_code = '1122' GROUP BY c.cust_name;" },
       { d: '连接预算与实际（预算执行率基础）', s: "SELECT d.dept_name, b.month, SUM(b.budget_amount) AS 预算 FROM budgets b JOIN departments d ON b.dept_id = d.dept_id WHERE b.acc_code = '6601' GROUP BY d.dept_name, b.month LIMIT 12;" },
     ]},
+    { cat: 'CASE WHEN 条件判断', items: [
+      { d: '搜索型 CASE（最常用）', s: "SELECT vid, amount, CASE WHEN amount >= 100000 THEN '大额' WHEN amount >= 10000 THEN '中额' ELSE '小额' END AS 档位 FROM vouchers LIMIT 10;" },
+      { d: '简单型 CASE（等值匹配）', s: "SELECT vid, direction, CASE direction WHEN '借' THEN amount ELSE -amount END AS 净额 FROM vouchers LIMIT 10;" },
+      { d: 'CASE 配合分组（GROUP BY 里要重写完整表达式，不能用别名）', s: "SELECT CASE WHEN amount >= 100000 THEN '大额' ELSE '其他' END AS 档位, COUNT(*) AS 笔数 FROM vouchers GROUP BY CASE WHEN amount >= 100000 THEN '大额' ELSE '其他' END;" },
+    ]},
+    { cat: '子查询 Subquery', items: [
+      { d: '标量子查询（返回一个值，内层先跑）', s: 'SELECT vid, amount FROM vouchers WHERE amount > (SELECT AVG(amount) FROM vouchers) LIMIT 10;' },
+      { d: 'IN 子查询（返回一列值）', s: "SELECT vid, dept_id FROM vouchers WHERE dept_id IN (SELECT dept_id FROM departments WHERE region = '华东') LIMIT 10;" },
+      { d: 'FROM 派生表（必须起别名）', s: 'SELECT t.dept_id, t.cnt FROM (SELECT dept_id, COUNT(*) AS cnt FROM vouchers GROUP BY dept_id) t WHERE t.cnt > 100;' },
+    ]},
+    { cat: '窗口函数 Window Function', items: [
+      { d: 'ROW_NUMBER 分组内编号（行数不变）', s: 'SELECT vid, dept_id, amount, ROW_NUMBER() OVER (PARTITION BY dept_id ORDER BY amount DESC) AS rn FROM vouchers LIMIT 10;' },
+      { d: 'RANK / DENSE_RANK 排名', s: 'SELECT vid, dept_id, amount, RANK() OVER (PARTITION BY dept_id ORDER BY amount DESC) AS rk FROM vouchers LIMIT 10;' },
+      { d: 'SUM OVER 分组内累计求和', s: 'SELECT vid, dept_id, amount, SUM(amount) OVER (PARTITION BY dept_id ORDER BY amount DESC) AS 累计 FROM vouchers LIMIT 10;' },
+      { d: '窗口 + 子查询：取每组前 N 名', s: 'SELECT t.dept_id, t.vid, t.amount FROM (SELECT dept_id, vid, amount, ROW_NUMBER() OVER (PARTITION BY dept_id ORDER BY amount DESC) AS rn FROM vouchers) t WHERE t.rn <= 3;' },
+    ]},
     { cat: '常用函数', items: [
       { d: 'YEAR / MONTH 提取年月', s: "SELECT YEAR(date) AS 年, MONTH(date) AS 月, SUM(amount) AS 收入 FROM vouchers WHERE acc_code = '6001' GROUP BY YEAR(date), MONTH(date);" },
       { d: 'ROUND 四舍五入', s: 'SELECT ROUND(AVG(amount), 2) AS 平均金额 FROM vouchers;' },
@@ -1417,9 +1700,10 @@ function runSQL(sql, db) {
       { d: '常见数据类型', s: '-- INT 整数 / NUMERIC 数值 / TEXT 文本 / DATE 日期 / VARCHAR(50) 变长文本' },
     ]},
     { cat: '本练习台的限制（已知边界）', items: [
-      { d: '不支持的子查询', s: '-- 形如 (SELECT ...) 的子查询暂不支持，请用 JOIN 改写' },
-      { d: '窗口函数 / CTE', s: '-- ROW_NUMBER()、WITH 等高级语法暂不支持' },
-      { d: '建议练习路径', s: '-- 先练 SELECT+WHERE，再练 GROUP BY，最后练 JOIN 与预算分析' },
+      { d: '不支持相关子查询', s: '-- 子查询内部不能引用外层表的列；独立子查询正常可用' },
+      { d: '不支持 CTE（WITH）', s: '-- WITH 语法暂不支持，请改用 FROM (SELECT ...) t 派生表' },
+      { d: '不支持 FULL JOIN', s: '-- INNER / LEFT / RIGHT JOIN 已支持；FULL JOIN 不支持' },
+      { d: '建议练习路径', s: '-- SELECT+WHERE → GROUP BY/HAVING → JOIN → CASE WHEN → 子查询 → 窗口函数' },
     ]},
   ];
 
@@ -1477,6 +1761,191 @@ function runSQL(sql, db) {
     $all('.tab-pane').forEach((p) => p.classList.toggle('active', p.id === 'pane-' + name));
   }
 
+  /* ---------- 导入用户数据（xlsx / csv） ---------- */
+  function decodeXmlEnt(s) {
+    return String(s).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+  }
+  function colLetterToIdx(s) {
+    let n = 0;
+    for (let i = 0; i < s.length; i++) n = n * 26 + (s.charCodeAt(i) - 64);
+    return n - 1;
+  }
+  function parseCsvText(text) {
+    const first = text.split(/\r?\n/)[0] || '';
+    const delim = first.split('\t').length > first.split(',').length ? '\t' : ',';
+    const rows = [];
+    let row = [], cur = '', inQ = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (inQ) {
+        if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+        else cur += c;
+      } else if (c === '"') inQ = true;
+      else if (c === delim) { row.push(cur); cur = ''; }
+      else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+      else if (c !== '\r') cur += c;
+    }
+    if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+    return rows;
+  }
+  async function parseXlsxBuffer(buf) {
+    if (typeof DecompressionStream === 'undefined') throw new Error('当前浏览器不支持内置解压，请在 Excel 里用"另存为 CSV"后再导入');
+    const data = new Uint8Array(buf);
+    const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    let eocd = -1;
+    const min = Math.max(0, data.length - 65558);
+    for (let i = data.length - 22; i >= min; i--) {
+      if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) throw new Error('不是有效的 xlsx 文件');
+    const cdCount = dv.getUint16(eocd + 10, true);
+    let ptr = dv.getUint32(eocd + 16, true);
+    const entries = {};
+    for (let i = 0; i < cdCount; i++) {
+      if (ptr + 46 > data.length || dv.getUint32(ptr, true) !== 0x02014b50) break;
+      const method = dv.getUint16(ptr + 10, true);
+      const compSize = dv.getUint32(ptr + 20, true);
+      const nameLen = dv.getUint16(ptr + 28, true);
+      const extraLen = dv.getUint16(ptr + 30, true);
+      const commentLen = dv.getUint16(ptr + 32, true);
+      const localOffset = dv.getUint32(ptr + 42, true);
+      let name = '';
+      for (let j = 0; j < nameLen; j++) name += String.fromCharCode(data[ptr + 46 + j]);
+      entries[name] = { method, compSize, localOffset };
+      ptr += 46 + nameLen + extraLen + commentLen;
+    }
+    async function readEntry(name) {
+      const e = entries[name];
+      if (!e) return null;
+      const nameLen = dv.getUint16(e.localOffset + 26, true);
+      const extraLen = dv.getUint16(e.localOffset + 28, true);
+      const start = e.localOffset + 30 + nameLen + extraLen;
+      const chunk = data.subarray(start, start + e.compSize);
+      if (e.method === 0) return new TextDecoder('utf-8').decode(chunk);
+      const ds = new DecompressionStream('deflate-raw');
+      const stream = new Blob([chunk]).stream().pipeThrough(ds);
+      const out = await new Response(stream).arrayBuffer();
+      return new TextDecoder('utf-8').decode(out);
+    }
+    const shared = [];
+    const ssXml = await readEntry('xl/sharedStrings.xml');
+    if (ssXml) {
+      const re = /<si>([\s\S]*?)<\/si>/g; let m;
+      while ((m = re.exec(ssXml))) {
+        let s = '';
+        const tre = /<t[^>]*>([\s\S]*?)<\/t>/g; let tm;
+        while ((tm = tre.exec(m[1]))) s += decodeXmlEnt(tm[1]);
+        shared.push(s);
+      }
+    }
+    let sheetXml = await readEntry('xl/worksheets/sheet1.xml');
+    if (!sheetXml) {
+      const k = Object.keys(entries).find((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n));
+      if (k) sheetXml = await readEntry(k);
+    }
+    if (!sheetXml) throw new Error('未找到工作表内容');
+    const rows = [];
+    const rowRe = /<row[^>]*>([\s\S]*?)<\/row>|<row[^>]*\/>/g; let rm;
+    while ((rm = rowRe.exec(sheetXml))) {
+      const rowXml = rm[0];
+      const cells = [];
+      const cRe = /<c\s([^>]*?)>([\s\S]*?)<\/c>|<c\s([^>]*?)\/>/g; let cm;
+      while ((cm = cRe.exec(rowXml))) {
+        const attrs = cm[1] || cm[3] || '';
+        const inner = cm[2] || '';
+        const rM = /r="([A-Z]+)/.exec(attrs);
+        const tM = /t="([^"]+)"/.exec(attrs);
+        const vM = /<v[^>]*>([\s\S]*?)<\/v>/.exec(inner);
+        const isM = /<is>([\s\S]*?)<\/is>/.exec(inner);
+        const idx = rM ? colLetterToIdx(rM[1]) : cells.length;
+        let val = '';
+        if (tM && tM[1] === 'inlineStr' && isM) {
+          let s = '';
+          const tre = /<t[^>]*>([\s\S]*?)<\/t>/g; let tm;
+          while ((tm = tre.exec(isM[1]))) s += decodeXmlEnt(tm[1]);
+          val = s;
+        } else if (vM) {
+          const raw = decodeXmlEnt(vM[1]);
+          val = (tM && tM[1] === 's') ? (shared[parseInt(raw, 10)] ?? '') : raw;
+        }
+        cells[idx] = val;
+      }
+      for (let i = 0; i < cells.length; i++) if (cells[i] === undefined) cells[i] = '';
+      rows.push(cells);
+    }
+    return rows;
+  }
+  function rowsToTable(rows) {
+    if (!rows.length) throw new Error('文件是空的');
+    const header = rows[0].map((h, i) => {
+      const s = String(h == null ? '' : h).trim();
+      return s === '' ? 'col' + (i + 1) : s;
+    });
+    const out = [];
+    for (let i = 1; i < rows.length; i++) {
+      const src = rows[i] || [];
+      if (src.every((v) => v === '' || v == null)) continue;
+      const o = {};
+      header.forEach((h, j) => {
+        let v = src[j];
+        if (typeof v === 'string') {
+          const t = v.trim();
+          v = (t !== '' && /^-?\d+(\.\d+)?$/.test(t)) ? Number(t) : t;
+        }
+        o[h] = v;
+      });
+      out.push(o);
+    }
+    return { cols: header, rows: out };
+  }
+  function tableNameFrom(fname) {
+    let n = fname.replace(/\.(xlsx|csv|tsv|txt)$/i, '').trim();
+    n = n.replace(/[^\w一-龥]/g, '_');
+    if (!n) n = 'my_data';
+    if (/^\d/.test(n)) n = 'my_' + n;
+    return n;
+  }
+  async function handleImportFile(ev) {
+    const file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+    ev.target.value = '';
+    const hint = $('#importHint');
+    hint.style.display = 'block';
+    hint.textContent = '正在解析 ' + file.name + ' ...';
+    try {
+      let rows;
+      const lower = file.name.toLowerCase();
+      if (lower.endsWith('.csv') || lower.endsWith('.tsv') || lower.endsWith('.txt')) {
+        const buf = await file.arrayBuffer();
+        let text = new TextDecoder('utf-8').decode(buf);
+        if (text.indexOf('\uFFFD') >= 0) {
+          try {
+            const gbk = new TextDecoder('gbk').decode(buf);
+            if (gbk.indexOf('\uFFFD') < 0) text = gbk;
+          } catch (e) { /* 浏览器不支持 GBK 则沿用 UTF-8 结果 */ }
+        }
+        rows = parseCsvText(text.replace(/^﻿/, ''));
+      } else if (lower.endsWith('.xlsx')) {
+        rows = await parseXlsxBuffer(await file.arrayBuffer());
+      } else {
+        throw new Error('仅支持 .xlsx / .csv 文件（Excel 可用"另存为 CSV"）');
+      }
+      const t = rowsToTable(rows);
+      if (!t.cols.length) throw new Error('未能识别表头，请确认第一行是列名');
+      let name = tableNameFrom(file.name);
+      if (DB[name]) { let i = 2; while (DB[name + '_' + i]) i++; name = name + '_' + i; }
+      DB[name] = { cols: t.cols, rows: t.rows };
+      saveDB();
+      renderTableList();
+      showTable(name);
+      hint.textContent = '已导入表 ' + name + '（' + t.rows.length + ' 行 x ' + t.cols.length + ' 列），可在 SQL 沙盒里直接查询。';
+      toast('导入成功：' + name);
+    } catch (e) {
+      hint.textContent = '导入失败：' + e.message;
+      toast('导入失败');
+    }
+  }
+
   /* ---------- 初始化 ---------- */
   function init() {
     DB = loadDB() || buildDB();
@@ -1514,6 +1983,8 @@ function runSQL(sql, db) {
       if (confirm('确定要重置为初始虚拟财务数据吗？你做的 INSERT/UPDATE/DELETE 与自建表将被清空。')) resetDB();
     });
     $('#refreshDataBtn').addEventListener('click', () => { renderTableList(); showTable(currentTable); toast('已刷新数据视图'); });
+    $('#importDataBtn').addEventListener('click', () => $('#importFile').click());
+    $('#importFile').addEventListener('change', handleImportFile);
 
     $all('.tab-btn').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
