@@ -983,7 +983,8 @@ function executeSelect(ast, db) {
 
   for (const j of ast.joins) {
     const rightMetaRaw = loadTable(j.table, db);
-    const rightMeta = { alias: (j.table.alias || j.table.name).toLowerCase(), cols: db[Object.keys(db).find((k) => k.toLowerCase() === j.table.name.toLowerCase())].cols, tableName: rightMetaRaw.tableName };
+    const jAlias = j.table.alias || j.table.name || 'sub';
+    const rightMeta = { alias: jAlias.toLowerCase(), cols: j.table.subquery ? rightMetaRaw.cols : db[Object.keys(db).find((k) => k.toLowerCase() === j.table.name.toLowerCase())].cols, tableName: rightMetaRaw.tableName };
     const newRows = [];
     for (const lr of rows) {
       let matchedAny = false;
@@ -1531,7 +1532,7 @@ if (typeof require !== 'undefined' && require.main === module) {
     area.innerHTML = html;
   }
   function renderError(msg) {
-    $('#resultArea').innerHTML = `<div class="err-msg">执行出错：${esc(msg)}<div class="err-hint">提示：本练习台支持 SELECT / INSERT / UPDATE / DELETE / CREATE / DROP，以及 JOIN、聚合、GROUP BY 等。子查询暂不支持。</div></div>`;
+    $('#resultArea').innerHTML = `<div class="err-msg">执行出错：${esc(msg)}<div class="err-hint">提示：本练习台支持 SELECT / INSERT / UPDATE / DELETE / CREATE / DROP，以及 JOIN、聚合、GROUP BY、CASE WHEN、子查询、窗口函数 等。</div></div>`;
   }
 
   function exportCSV() {
