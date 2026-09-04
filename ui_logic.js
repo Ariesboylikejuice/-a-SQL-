@@ -191,7 +191,7 @@
     area.innerHTML = html;
   }
   function renderError(msg) {
-    $('#resultArea').innerHTML = `<div class="err-msg">执行出错：${esc(msg)}<div class="err-hint">提示：本练习台支持 SELECT / INSERT / UPDATE / DELETE / CREATE / DROP，以及 JOIN、聚合、GROUP BY 等。子查询暂不支持。</div></div>`;
+    $('#resultArea').innerHTML = `<div class="err-msg">执行出错：${esc(msg)}<div class="err-hint">提示：本练习台支持 SELECT / INSERT / UPDATE / DELETE / CREATE / DROP，以及 JOIN、聚合、GROUP BY、CASE WHEN、子查询、窗口函数 等。</div></div>`;
   }
 
   function exportCSV() {
@@ -325,6 +325,22 @@
       { d: '三表连接（凭证+部门+客户）', s: "SELECT c.cust_name, SUM(v.amount) AS 应收 FROM vouchers v JOIN customers c ON v.cust_id = c.cust_id WHERE v.acc_code = '1122' GROUP BY c.cust_name;" },
       { d: '连接预算与实际（预算执行率基础）', s: "SELECT d.dept_name, b.month, SUM(b.budget_amount) AS 预算 FROM budgets b JOIN departments d ON b.dept_id = d.dept_id WHERE b.acc_code = '6601' GROUP BY d.dept_name, b.month LIMIT 12;" },
     ]},
+    { cat: 'CASE WHEN 条件判断', items: [
+      { d: '搜索型 CASE（最常用）', s: "SELECT vid, amount, CASE WHEN amount >= 100000 THEN '大额' WHEN amount >= 10000 THEN '中额' ELSE '小额' END AS 档位 FROM vouchers LIMIT 10;" },
+      { d: '简单型 CASE（等值匹配）', s: "SELECT vid, direction, CASE direction WHEN '借' THEN amount ELSE -amount END AS 净额 FROM vouchers LIMIT 10;" },
+      { d: 'CASE 配合分组（GROUP BY 里要重写完整表达式，不能用别名）', s: "SELECT CASE WHEN amount >= 100000 THEN '大额' ELSE '其他' END AS 档位, COUNT(*) AS 笔数 FROM vouchers GROUP BY CASE WHEN amount >= 100000 THEN '大额' ELSE '其他' END;" },
+    ]},
+    { cat: '子查询 Subquery', items: [
+      { d: '标量子查询（返回一个值，内层先跑）', s: 'SELECT vid, amount FROM vouchers WHERE amount > (SELECT AVG(amount) FROM vouchers) LIMIT 10;' },
+      { d: 'IN 子查询（返回一列值）', s: "SELECT vid, dept_id FROM vouchers WHERE dept_id IN (SELECT dept_id FROM departments WHERE region = '华东') LIMIT 10;" },
+      { d: 'FROM 派生表（必须起别名）', s: 'SELECT t.dept_id, t.cnt FROM (SELECT dept_id, COUNT(*) AS cnt FROM vouchers GROUP BY dept_id) t WHERE t.cnt > 100;' },
+    ]},
+    { cat: '窗口函数 Window Function', items: [
+      { d: 'ROW_NUMBER 分组内编号（行数不变）', s: 'SELECT vid, dept_id, amount, ROW_NUMBER() OVER (PARTITION BY dept_id ORDER BY amount DESC) AS rn FROM vouchers LIMIT 10;' },
+      { d: 'RANK / DENSE_RANK 排名', s: 'SELECT vid, dept_id, amount, RANK() OVER (PARTITION BY dept_id ORDER BY amount DESC) AS rk FROM vouchers LIMIT 10;' },
+      { d: 'SUM OVER 分组内累计求和', s: 'SELECT vid, dept_id, amount, SUM(amount) OVER (PARTITION BY dept_id ORDER BY amount DESC) AS 累计 FROM vouchers LIMIT 10;' },
+      { d: '窗口 + 子查询：取每组前 N 名', s: 'SELECT t.dept_id, t.vid, t.amount FROM (SELECT dept_id, vid, amount, ROW_NUMBER() OVER (PARTITION BY dept_id ORDER BY amount DESC) AS rn FROM vouchers) t WHERE t.rn <= 3;' },
+    ]},
     { cat: '常用函数', items: [
       { d: 'YEAR / MONTH 提取年月', s: "SELECT YEAR(date) AS 年, MONTH(date) AS 月, SUM(amount) AS 收入 FROM vouchers WHERE acc_code = '6001' GROUP BY YEAR(date), MONTH(date);" },
       { d: 'ROUND 四舍五入', s: 'SELECT ROUND(AVG(amount), 2) AS 平均金额 FROM vouchers;' },
@@ -344,9 +360,10 @@
       { d: '常见数据类型', s: '-- INT 整数 / NUMERIC 数值 / TEXT 文本 / DATE 日期 / VARCHAR(50) 变长文本' },
     ]},
     { cat: '本练习台的限制（已知边界）', items: [
-      { d: '不支持的子查询', s: '-- 形如 (SELECT ...) 的子查询暂不支持，请用 JOIN 改写' },
-      { d: '窗口函数 / CTE', s: '-- ROW_NUMBER()、WITH 等高级语法暂不支持' },
-      { d: '建议练习路径', s: '-- 先练 SELECT+WHERE，再练 GROUP BY，最后练 JOIN 与预算分析' },
+      { d: '不支持相关子查询', s: '-- 子查询内部不能引用外层表的列；独立子查询正常可用' },
+      { d: '不支持 CTE（WITH）', s: '-- WITH 语法暂不支持，请改用 FROM (SELECT ...) t 派生表' },
+      { d: '不支持 FULL JOIN', s: '-- INNER / LEFT / RIGHT JOIN 已支持；FULL JOIN 不支持' },
+      { d: '建议练习路径', s: '-- SELECT+WHERE → GROUP BY/HAVING → JOIN → CASE WHEN → 子查询 → 窗口函数' },
     ]},
   ];
 
@@ -404,6 +421,191 @@
     $all('.tab-pane').forEach((p) => p.classList.toggle('active', p.id === 'pane-' + name));
   }
 
+  /* ---------- 导入用户数据（xlsx / csv） ---------- */
+  function decodeXmlEnt(s) {
+    return String(s).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+  }
+  function colLetterToIdx(s) {
+    let n = 0;
+    for (let i = 0; i < s.length; i++) n = n * 26 + (s.charCodeAt(i) - 64);
+    return n - 1;
+  }
+  function parseCsvText(text) {
+    const first = text.split(/\r?\n/)[0] || '';
+    const delim = first.split('\t').length > first.split(',').length ? '\t' : ',';
+    const rows = [];
+    let row = [], cur = '', inQ = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (inQ) {
+        if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+        else cur += c;
+      } else if (c === '"') inQ = true;
+      else if (c === delim) { row.push(cur); cur = ''; }
+      else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+      else if (c !== '\r') cur += c;
+    }
+    if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+    return rows;
+  }
+  async function parseXlsxBuffer(buf) {
+    if (typeof DecompressionStream === 'undefined') throw new Error('当前浏览器不支持内置解压，请在 Excel 里用"另存为 CSV"后再导入');
+    const data = new Uint8Array(buf);
+    const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    let eocd = -1;
+    const min = Math.max(0, data.length - 65558);
+    for (let i = data.length - 22; i >= min; i--) {
+      if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) throw new Error('不是有效的 xlsx 文件');
+    const cdCount = dv.getUint16(eocd + 10, true);
+    let ptr = dv.getUint32(eocd + 16, true);
+    const entries = {};
+    for (let i = 0; i < cdCount; i++) {
+      if (ptr + 46 > data.length || dv.getUint32(ptr, true) !== 0x02014b50) break;
+      const method = dv.getUint16(ptr + 10, true);
+      const compSize = dv.getUint32(ptr + 20, true);
+      const nameLen = dv.getUint16(ptr + 28, true);
+      const extraLen = dv.getUint16(ptr + 30, true);
+      const commentLen = dv.getUint16(ptr + 32, true);
+      const localOffset = dv.getUint32(ptr + 42, true);
+      let name = '';
+      for (let j = 0; j < nameLen; j++) name += String.fromCharCode(data[ptr + 46 + j]);
+      entries[name] = { method, compSize, localOffset };
+      ptr += 46 + nameLen + extraLen + commentLen;
+    }
+    async function readEntry(name) {
+      const e = entries[name];
+      if (!e) return null;
+      const nameLen = dv.getUint16(e.localOffset + 26, true);
+      const extraLen = dv.getUint16(e.localOffset + 28, true);
+      const start = e.localOffset + 30 + nameLen + extraLen;
+      const chunk = data.subarray(start, start + e.compSize);
+      if (e.method === 0) return new TextDecoder('utf-8').decode(chunk);
+      const ds = new DecompressionStream('deflate-raw');
+      const stream = new Blob([chunk]).stream().pipeThrough(ds);
+      const out = await new Response(stream).arrayBuffer();
+      return new TextDecoder('utf-8').decode(out);
+    }
+    const shared = [];
+    const ssXml = await readEntry('xl/sharedStrings.xml');
+    if (ssXml) {
+      const re = /<si>([\s\S]*?)<\/si>/g; let m;
+      while ((m = re.exec(ssXml))) {
+        let s = '';
+        const tre = /<t[^>]*>([\s\S]*?)<\/t>/g; let tm;
+        while ((tm = tre.exec(m[1]))) s += decodeXmlEnt(tm[1]);
+        shared.push(s);
+      }
+    }
+    let sheetXml = await readEntry('xl/worksheets/sheet1.xml');
+    if (!sheetXml) {
+      const k = Object.keys(entries).find((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n));
+      if (k) sheetXml = await readEntry(k);
+    }
+    if (!sheetXml) throw new Error('未找到工作表内容');
+    const rows = [];
+    const rowRe = /<row[^>]*>([\s\S]*?)<\/row>|<row[^>]*\/>/g; let rm;
+    while ((rm = rowRe.exec(sheetXml))) {
+      const rowXml = rm[0];
+      const cells = [];
+      const cRe = /<c\s([^>]*?)>([\s\S]*?)<\/c>|<c\s([^>]*?)\/>/g; let cm;
+      while ((cm = cRe.exec(rowXml))) {
+        const attrs = cm[1] || cm[3] || '';
+        const inner = cm[2] || '';
+        const rM = /r="([A-Z]+)/.exec(attrs);
+        const tM = /t="([^"]+)"/.exec(attrs);
+        const vM = /<v[^>]*>([\s\S]*?)<\/v>/.exec(inner);
+        const isM = /<is>([\s\S]*?)<\/is>/.exec(inner);
+        const idx = rM ? colLetterToIdx(rM[1]) : cells.length;
+        let val = '';
+        if (tM && tM[1] === 'inlineStr' && isM) {
+          let s = '';
+          const tre = /<t[^>]*>([\s\S]*?)<\/t>/g; let tm;
+          while ((tm = tre.exec(isM[1]))) s += decodeXmlEnt(tm[1]);
+          val = s;
+        } else if (vM) {
+          const raw = decodeXmlEnt(vM[1]);
+          val = (tM && tM[1] === 's') ? (shared[parseInt(raw, 10)] ?? '') : raw;
+        }
+        cells[idx] = val;
+      }
+      for (let i = 0; i < cells.length; i++) if (cells[i] === undefined) cells[i] = '';
+      rows.push(cells);
+    }
+    return rows;
+  }
+  function rowsToTable(rows) {
+    if (!rows.length) throw new Error('文件是空的');
+    const header = rows[0].map((h, i) => {
+      const s = String(h == null ? '' : h).trim();
+      return s === '' ? 'col' + (i + 1) : s;
+    });
+    const out = [];
+    for (let i = 1; i < rows.length; i++) {
+      const src = rows[i] || [];
+      if (src.every((v) => v === '' || v == null)) continue;
+      const o = {};
+      header.forEach((h, j) => {
+        let v = src[j];
+        if (typeof v === 'string') {
+          const t = v.trim();
+          v = (t !== '' && /^-?\d+(\.\d+)?$/.test(t)) ? Number(t) : t;
+        }
+        o[h] = v;
+      });
+      out.push(o);
+    }
+    return { cols: header, rows: out };
+  }
+  function tableNameFrom(fname) {
+    let n = fname.replace(/\.(xlsx|csv|tsv|txt)$/i, '').trim();
+    n = n.replace(/[^\w一-龥]/g, '_');
+    if (!n) n = 'my_data';
+    if (/^\d/.test(n)) n = 'my_' + n;
+    return n;
+  }
+  async function handleImportFile(ev) {
+    const file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+    ev.target.value = '';
+    const hint = $('#importHint');
+    hint.style.display = 'block';
+    hint.textContent = '正在解析 ' + file.name + ' ...';
+    try {
+      let rows;
+      const lower = file.name.toLowerCase();
+      if (lower.endsWith('.csv') || lower.endsWith('.tsv') || lower.endsWith('.txt')) {
+        const buf = await file.arrayBuffer();
+        let text = new TextDecoder('utf-8').decode(buf);
+        if (text.indexOf('\uFFFD') >= 0) {
+          try {
+            const gbk = new TextDecoder('gbk').decode(buf);
+            if (gbk.indexOf('\uFFFD') < 0) text = gbk;
+          } catch (e) { /* 浏览器不支持 GBK 则沿用 UTF-8 结果 */ }
+        }
+        rows = parseCsvText(text.replace(/^﻿/, ''));
+      } else if (lower.endsWith('.xlsx')) {
+        rows = await parseXlsxBuffer(await file.arrayBuffer());
+      } else {
+        throw new Error('仅支持 .xlsx / .csv 文件（Excel 可用"另存为 CSV"）');
+      }
+      const t = rowsToTable(rows);
+      if (!t.cols.length) throw new Error('未能识别表头，请确认第一行是列名');
+      let name = tableNameFrom(file.name);
+      if (DB[name]) { let i = 2; while (DB[name + '_' + i]) i++; name = name + '_' + i; }
+      DB[name] = { cols: t.cols, rows: t.rows };
+      saveDB();
+      renderTableList();
+      showTable(name);
+      hint.textContent = '已导入表 ' + name + '（' + t.rows.length + ' 行 x ' + t.cols.length + ' 列），可在 SQL 沙盒里直接查询。';
+      toast('导入成功：' + name);
+    } catch (e) {
+      hint.textContent = '导入失败：' + e.message;
+      toast('导入失败');
+    }
+  }
+
   /* ---------- 初始化 ---------- */
   function init() {
     DB = loadDB() || buildDB();
@@ -441,6 +643,8 @@
       if (confirm('确定要重置为初始虚拟财务数据吗？你做的 INSERT/UPDATE/DELETE 与自建表将被清空。')) resetDB();
     });
     $('#refreshDataBtn').addEventListener('click', () => { renderTableList(); showTable(currentTable); toast('已刷新数据视图'); });
+    $('#importDataBtn').addEventListener('click', () => $('#importFile').click());
+    $('#importFile').addEventListener('change', handleImportFile);
 
     $all('.tab-btn').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 

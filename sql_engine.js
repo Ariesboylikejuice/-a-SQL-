@@ -145,6 +145,9 @@ function buildDB() {
 
 /* ======================== SQL 引擎 ======================== */
 
+let ACTIVE_DB = null;
+let WIN_CACHE = new Map();
+
 function tokenize(sql) {
   const tokens = [];
   let i = 0;
@@ -230,6 +233,11 @@ function parse(sql0) {
     }
     if (isKw('IN')) {
       next(); eatOp('(');
+      if (isKw('SELECT')) {
+        const sub = parseSelect(true);
+        eatOp(')');
+        return { type: 'bin', op: 'IN_SUBQUERY', left, sub };
+      }
       const list = [];
       if (!isOp(')')) {
         list.push(parseValue());
@@ -282,10 +290,20 @@ function parse(sql0) {
     return parsePrimary();
   }
   function parsePrimary() {
+    if (isKw('CASE')) return parseCase();
     if (cur().t === 'num') return { type: 'lit', value: next().v };
     if (cur().t === 'str') return { type: 'lit', value: next().v };
     if (isKw('NULL')) { next(); return { type: 'lit', value: null }; }
-    if (cur().t === 'op' && cur().v === '(') { next(); const e = parseExpr(); eatOp(')'); return e; }
+    if (cur().t === 'op' && cur().v === '(') {
+      const ahead = tokens[p + 1];
+      if (ahead && ahead.t === 'ident' && ahead.v.toUpperCase() === 'SELECT') {
+        next();
+        const sub = parseSelect(true);
+        eatOp(')');
+        return { type: 'scalar_subquery', ast: sub };
+      }
+      next(); const e = parseExpr(); eatOp(')'); return e;
+    }
     if (cur().t === 'ident') {
       const name = next().v;
       // 函数?
@@ -294,11 +312,15 @@ function parse(sql0) {
         const fname = name.toUpperCase();
         const AGG = ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'];
         if (AGG.includes(fname)) {
-          if (fname === 'COUNT' && cur().t === 'op' && cur().v === '*') { next(); eatOp(')'); return { type: 'agg', fn: 'COUNT', arg: '*' }; }
-          let distinct = false;
-          if (acceptKw('DISTINCT')) distinct = true;
-          const arg = parseExpr();
+          let arg = null, distinct = false;
+          if (fname === 'COUNT' && cur().t === 'op' && cur().v === '*') { next(); arg = '*'; }
+          else {
+            if (acceptKw('DISTINCT')) distinct = true;
+            arg = parseExpr();
+          }
           eatOp(')');
+          const over = parseOver();
+          if (over) return { type: 'win', fn: fname, arg, distinct, partitionBy: over.partitionBy, orderBy: over.orderBy };
           return { type: 'agg', fn: fname, arg, distinct };
         }
         const args = [];
@@ -307,6 +329,8 @@ function parse(sql0) {
           while (acceptOp(',')) args.push(parseExpr());
         }
         eatOp(')');
+        const over = parseOver();
+        if (over) return { type: 'win', fn: fname, args, partitionBy: over.partitionBy, orderBy: over.orderBy };
         return { type: 'func', name: fname, args };
       }
       // 列引用（可能 table.col）
@@ -322,6 +346,48 @@ function parse(sql0) {
     throw new Error('无法解析表达式，遇到：' + (cur().t === 'eof' ? '语句结尾' : cur().v));
   }
 
+  function parseOver() {
+    if (!isKw('OVER')) return null;
+    next();
+    eatOp('(');
+    const partitionBy = [];
+    const orderBy = [];
+    if (acceptKw('PARTITION')) {
+      eatKw('BY');
+      partitionBy.push(parseExpr());
+      while (acceptOp(',')) partitionBy.push(parseExpr());
+    }
+    if (acceptKw('ORDER')) {
+      eatKw('BY');
+      do {
+        const e = parseExpr();
+        let dir = 'ASC';
+        if (isKw('ASC')) next();
+        else if (isKw('DESC')) { next(); dir = 'DESC'; }
+        orderBy.push({ expr: e, dir });
+      } while (acceptOp(','));
+    }
+    eatOp(')');
+    return { partitionBy, orderBy };
+  }
+
+  function parseCase() {
+    eatKw('CASE');
+    let operand = null;
+    if (!isKw('WHEN')) operand = parseExpr();
+    const whens = [];
+    while (acceptKw('WHEN')) {
+      const cond = parseExpr();
+      eatKw('THEN');
+      const then = parseExpr();
+      whens.push({ cond, then });
+    }
+    let els = null;
+    if (acceptKw('ELSE')) els = parseExpr();
+    eatKw('END');
+    return { type: 'case', operand, whens, els };
+  }
+
   // ---- 顶层语句 ----
   const lc = cur().v ? cur().v.toUpperCase() : '';
   if (lc === 'SELECT') return parseSelect();
@@ -332,7 +398,7 @@ function parse(sql0) {
   if (lc === 'DROP') return parseDrop();
   throw new Error('仅支持 SELECT / INSERT / UPDATE / DELETE / CREATE / DROP 语句');
 
-  function parseSelect() {
+  function parseSelect(nested) {
     eatKw('SELECT');
     const distinct = acceptKw('DISTINCT');
     const items = [];
@@ -376,11 +442,24 @@ function parse(sql0) {
       if (cur().t === 'num') { limit = next().v; if (acceptKw('OFFSET') && cur().t === 'num') offset = next().v; }
       else throw new Error('LIMIT 后需为数字');
     }
-    if (cur().t !== 'eof') throw new Error('语句末尾存在多余内容：' + cur().v);
+    if (!nested && cur().t !== 'eof') throw new Error('语句末尾存在多余内容：' + cur().v);
     return { kind: 'select', distinct, items, from, joins, where, groupBy, having, orderBy, limit, offset };
   }
 
   function parseTableRef() {
+    if (cur().t === 'op' && cur().v === '(') {
+      const ahead = tokens[p + 1];
+      if (ahead && ahead.t === 'ident' && ahead.v.toUpperCase() === 'SELECT') {
+        next();
+        const sub = parseSelect(true);
+        eatOp(')');
+        let alias = null;
+        if (acceptKw('AS')) { if (cur().t === 'ident') alias = next().v; }
+        else if (cur().t === 'ident' && !RESERVED.has(cur().v.toUpperCase())) alias = next().v;
+        if (!alias) throw new Error('FROM 子查询必须起别名，例如：FROM (SELECT ...) t');
+        return { name: null, alias, subquery: sub };
+      }
+    }
     if (cur().t !== 'ident') throw new Error('缺少表名');
     const name = next().v;
     let alias = null;
@@ -528,6 +607,11 @@ function evalExpr(node, row, groupRows) {
       if (op === 'ISNULL') return (l === null || l === undefined) === node.isNull;
       if (op === 'LIKE') return likeOp(l, evalExpr(node.right, row, groupRows));
       if (op === 'IN') return node.list.some((v) => cmpOp('=', l, v.value));
+      if (op === 'IN_SUBQUERY') {
+        if (!ACTIVE_DB) throw new Error('子查询执行失败：缺少数据库上下文');
+        const res = executeSelect(node.sub, ACTIVE_DB);
+        return res.rows.some((r) => cmpOp('=', l, r[0]));
+      }
       if (op === 'BETWEEN') return cmpOp('>=', l, evalExpr(node.low, row, groupRows)) && cmpOp('<=', l, evalExpr(node.high, row, groupRows));
       const r = evalExpr(node.right, row, groupRows);
       if (['=', '!=', '<>', '<', '>', '<=', '>='].includes(op)) return cmpOp(op, l, r);
@@ -541,6 +625,31 @@ function evalExpr(node, row, groupRows) {
     case 'func': return callFunc(node.name, node.args.map((a) => evalExpr(a, row, groupRows)));
     case 'agg':
       return evalAgg(node, groupRows);
+    case 'case': {
+      if (node.operand) {
+        const ov = evalExpr(node.operand, row, groupRows);
+        for (const w of node.whens) {
+          if (cmpOp('=', ov, evalExpr(w.cond, row, groupRows))) return evalExpr(w.then, row, groupRows);
+        }
+      } else {
+        for (const w of node.whens) {
+          if (truthy(evalExpr(w.cond, row, groupRows))) return evalExpr(w.then, row, groupRows);
+        }
+      }
+      return node.els ? evalExpr(node.els, row, groupRows) : null;
+    }
+    case 'scalar_subquery': {
+      if (!ACTIVE_DB) throw new Error('子查询执行失败：缺少数据库上下文');
+      const res = executeSelect(node.ast, ACTIVE_DB);
+      if (!res.rows.length) return null;
+      return res.rows[0][0];
+    }
+    case 'win': {
+      const idx = row ? row.__winIdx : undefined;
+      const cache = WIN_CACHE.get(node);
+      if (cache && idx !== undefined && cache.has(idx)) return cache.get(idx);
+      return null;
+    }
   }
   throw new Error('无法求值的表达式节点');
 }
@@ -579,6 +688,18 @@ function evalAgg(node, groupRows) {
 
 /* ---------- 执行 ---------- */
 function loadTable(ref, db) {
+  if (ref.subquery) {
+    const res = executeSelect(ref.subquery, db);
+    const cols = res.columns.map(String);
+    const alias = (ref.alias || 'sub').toLowerCase();
+    const out = [];
+    for (const r of res.rows) {
+      const row = {};
+      cols.forEach((c, i) => { row[c] = r[i]; row[alias + '.' + c] = r[i]; });
+      out.push(row);
+    }
+    return { rows: out, alias, tableName: null, cols };
+  }
   const key = Object.keys(db).find((k) => k.toLowerCase() === ref.name.toLowerCase());
   if (!key) throw new Error('表不存在：' + ref.name);
   const t = db[key];
@@ -616,7 +737,8 @@ function executeSelect(ast, db) {
 
   for (const j of ast.joins) {
     const rightMetaRaw = loadTable(j.table, db);
-    const rightMeta = { alias: (j.table.alias || j.table.name).toLowerCase(), cols: db[Object.keys(db).find((k) => k.toLowerCase() === j.table.name.toLowerCase())].cols, tableName: rightMetaRaw.tableName };
+    const jAlias = j.table.alias || j.table.name || 'sub';
+    const rightMeta = { alias: jAlias.toLowerCase(), cols: j.table.subquery ? rightMetaRaw.cols : db[Object.keys(db).find((k) => k.toLowerCase() === j.table.name.toLowerCase())].cols, tableName: rightMetaRaw.tableName };
     const newRows = [];
     for (const lr of rows) {
       let matchedAny = false;
@@ -677,6 +799,24 @@ function executeSelect(ast, db) {
     columns.push({ key: header, header, expr: it.expr });
   }
 
+  rows.forEach((r, i) => { if (r && typeof r === 'object') r.__winIdx = i; });
+  {
+    const winNodes = [];
+    const collectWin = (nd) => {
+      if (!nd || typeof nd !== 'object') return;
+      if (nd.type === 'win') { if (!winNodes.includes(nd)) winNodes.push(nd); return; }
+      if (nd.type === 'bin') { collectWin(nd.left); collectWin(nd.right); collectWin(nd.low); collectWin(nd.high); return; }
+      if (nd.type === 'unary') { collectWin(nd.expr); return; }
+      if (nd.type === 'func') { (nd.args || []).forEach(collectWin); return; }
+      if (nd.type === 'case') { collectWin(nd.operand); (nd.whens || []).forEach((w) => { collectWin(w.cond); collectWin(w.then); }); collectWin(nd.els); }
+    };
+    for (const col of columns) collectWin(col.expr);
+    for (const o of ast.orderBy) collectWin(o.expr);
+    collectWin(ast.having);
+    WIN_CACHE = new Map();
+    for (const wn of winNodes) WIN_CACHE.set(wn, computeWindow(wn, rows));
+  }
+
   // 生成中间结果（含 group 引用用于 HAVING）
   let inter = [];
   if (needGroup) {
@@ -735,6 +875,87 @@ function executeSelect(ast, db) {
   return { columns: columns.map((c) => c.header), rows: outRows, rowCount: outRows.length };
 }
 
+function aggOf(fn, arr) {
+  if (fn === 'COUNT') return arr.length;
+  const nums = arr.map(toNum);
+  if (!nums.length) return fn === 'SUM' ? 0 : null;
+  if (fn === 'SUM') return nums.reduce((a, b) => a + b, 0);
+  if (fn === 'AVG') return nums.reduce((a, b) => a + b, 0) / nums.length;
+  if (fn === 'MIN') return Math.min.apply(null, nums);
+  if (fn === 'MAX') return Math.max.apply(null, nums);
+  return null;
+}
+
+function computeWindow(winNode, rows) {
+  const result = new Map();
+  const partitions = new Map();
+  rows.forEach((r, idx) => {
+    const key = winNode.partitionBy && winNode.partitionBy.length
+      ? JSON.stringify(winNode.partitionBy.map((e) => evalExpr(e, r, [r])))
+      : '__ALL__';
+    if (!partitions.has(key)) partitions.set(key, []);
+    partitions.get(key).push(idx);
+  });
+  const orderBy = winNode.orderBy || [];
+  const cmpRows = (ia, ib) => {
+    for (const o of orderBy) {
+      const va = evalExpr(o.expr, rows[ia], [rows[ia]]);
+      const vb = evalExpr(o.expr, rows[ib], [rows[ib]]);
+      let cmp;
+      if (typeof va === 'number' && typeof vb === 'number') cmp = va - vb;
+      else {
+        const sa = String(va == null ? '' : va), sb = String(vb == null ? '' : vb);
+        cmp = sa < sb ? -1 : sa > sb ? 1 : 0;
+      }
+      if (cmp !== 0) return o.dir === 'DESC' ? -cmp : cmp;
+    }
+    return ia - ib;
+  };
+  for (const idxs of partitions.values()) {
+    const sorted = idxs.slice().sort(cmpRows);
+    const fn = (winNode.fn || '').toUpperCase();
+    if (fn === 'ROW_NUMBER') {
+      sorted.forEach((idx, i) => result.set(idx, i + 1));
+    } else if (fn === 'RANK' || fn === 'DENSE_RANK') {
+      const keys = sorted.map((idx) => (orderBy.length ? JSON.stringify(orderBy.map((o) => evalExpr(o.expr, rows[idx], [rows[idx]]))) : '__S__'));
+      if (fn === 'DENSE_RANK') {
+        let dense = 0;
+        sorted.forEach((idx, i) => {
+          if (i === 0 || keys[i] !== keys[i - 1]) dense++;
+          result.set(idx, dense);
+        });
+      } else {
+        sorted.forEach((idx, i) => {
+          let firstSame = i;
+          while (firstSame > 0 && keys[firstSame - 1] === keys[i]) firstSame--;
+          result.set(idx, firstSame + 1);
+        });
+      }
+    } else if (['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'].includes(fn)) {
+      const argExpr = winNode.arg !== undefined ? winNode.arg : (winNode.args && winNode.args[0]);
+      const getVal = (idx) => {
+        if (fn === 'COUNT' && (argExpr === '*' || argExpr == null)) return 1;
+        if (argExpr == null || argExpr === '*') return null;
+        return evalExpr(argExpr, rows[idx], [rows[idx]]);
+      };
+      if (orderBy.length) {
+        const acc = [];
+        sorted.forEach((idx) => {
+          const v = getVal(idx);
+          if (v !== null && v !== undefined) acc.push(v);
+          result.set(idx, aggOf(fn, acc));
+        });
+      } else {
+        const all = [];
+        sorted.forEach((idx) => { const v = getVal(idx); if (v !== null && v !== undefined) all.push(v); });
+        const total = aggOf(fn, all);
+        sorted.forEach((idx) => result.set(idx, total));
+      }
+    }
+  }
+  return result;
+}
+
 function lastJoinedRow(ast, db) {
   // 当结果为空且含 * 时用于推断列
   const fromMeta = loadTable(ast.from, db);
@@ -754,10 +975,14 @@ function containsAgg(node) {
   if (node.type === 'bin') return containsAgg(node.left) || containsAgg(node.right) || (node.low && containsAgg(node.low)) || (node.high && containsAgg(node.high));
   if (node.type === 'unary') return containsAgg(node.expr);
   if (node.type === 'func') return node.args.some((a) => containsAgg(a));
+  if (node.type === 'case') return containsAgg(node.operand) || node.whens.some((w) => containsAgg(w.cond) || containsAgg(w.then)) || containsAgg(node.els);
   return false;
 }
 
 function exprText(node) {
+  if (node.type === 'case') return 'CASE';
+  if (node.type === 'win') return node.fn + '() OVER';
+  if (node.type === 'scalar_subquery') return '(subquery)';
   if (node.type === 'col') return node.name;
   if (node.type === 'lit') return node.value == null ? 'NULL' : (typeof node.value === 'number' ? String(node.value) : "'" + node.value + "'");
   if (node.type === 'agg') return node.fn + '(' + (node.arg === '*' ? '*' : exprText(node.arg)) + ')';
@@ -821,9 +1046,13 @@ function executeDML(ast, db) {
 }
 
 function runSQL(sql, db) {
-  const ast = parse(sql);
-  if (ast.kind === 'select') return executeSelect(ast, db);
-  return executeDML(ast, db);
+  const prev = ACTIVE_DB;
+  ACTIVE_DB = db;
+  try {
+    const ast = parse(sql);
+    if (ast.kind === 'select') return executeSelect(ast, db);
+    return executeDML(ast, db);
+  } finally { ACTIVE_DB = prev; }
 }
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -831,7 +1060,7 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 
 /* ======================== 测试 ======================== */
-if (require.main === module) {
+if (typeof require !== 'undefined' && require.main === module) {
   const db = buildDB();
   const tests = [
     "SELECT * FROM vouchers LIMIT 3",
