@@ -1,2006 +1,562 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>SQL 财务分析练习台</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SQL 财务分析工单台 · 26,000 行模拟账套</title>
 <style>
   :root{
-    --bg:#f4f6fb; --card:#ffffff; --ink:#1f2937; --muted:#6b7280; --border:#e6e9f0;
-    --primary:#2563eb; --primary-d:#1d4ed8; --accent:#0ea5e9;
-    --income:#16a34a; --expense:#dc2626; --warn:#f59e0b; --ok:#16a34a;
-    --shadow:0 1px 3px rgba(16,24,40,.06),0 1px 2px rgba(16,24,40,.04);
+    --bg:#0e1116; --panel:#151a21; --panel2:#1b222b; --line:#252d38;
+    --tx:#e4e8ee; --tx2:#9aa5b4; --tx3:#6b7686;
+    --accent:#3d9df6; --ok:#3ec98a; --warn:#e5a23c; --err:#f06a6a;
+    --mono:'SF Mono','JetBrains Mono',Consolas,'Courier New',monospace;
+    --radius:10px;
   }
   *{box-sizing:border-box}
-  html,body{margin:0;padding:0}
+  html,body{height:100%}
   body{
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
-    background:var(--bg); color:var(--ink); line-height:1.55; -webkit-text-size-adjust:100%;
+    margin:0;background:var(--bg);color:var(--tx);
+    font:14px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    -webkit-font-smoothing:antialiased;
   }
-  a{color:var(--primary)}
-  .wrap{max-width:1080px;margin:0 auto;padding:0 14px 80px}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+  #boot{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;
+        justify-content:center;gap:14px;background:var(--bg);z-index:50;color:var(--tx2)}
+  #boot .bar{width:220px;height:3px;background:var(--line);border-radius:2px;overflow:hidden}
+  #boot .bar i{display:block;height:100%;width:40%;background:var(--accent);border-radius:2px;
+        animation:sl 1.1s ease-in-out infinite}
+  @keyframes sl{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}
 
-  /* 顶栏 */
-  header.topbar{
-    position:sticky; top:0; z-index:30; background:linear-gradient(120deg,#1e3a8a,#2563eb 55%,#0ea5e9);
-    color:#fff; padding:14px 16px; box-shadow:var(--shadow);
+  .app{display:flex;flex-direction:column;height:100vh}
+  header{
+    display:flex;align-items:center;gap:16px;padding:0 18px;height:52px;flex:none;
+    border-bottom:1px solid var(--line);background:var(--panel);
   }
-  .topbar .row{display:flex; align-items:center; gap:12px; max-width:1080px; margin:0 auto}
-  .logo{flex:0 0 auto}
-  .logo-ico{width:30px;height:30px;fill:#fff}
-  .ico{width:16px;height:16px;fill:currentColor;vertical-align:-3px;margin-right:6px}
-  .ico-sm{width:13px;height:13px;fill:currentColor;vertical-align:-2px;margin-right:4px}
-  .titlebox h1{font-size:18px; margin:0; font-weight:700; letter-spacing:.5px}
-  .titlebox p{margin:2px 0 0; font-size:12px; opacity:.85}
-  .topbar .spacer{flex:1}
-  .sync-pill{display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.3); padding:5px 10px; border-radius:999px; font-size:12px}
-  .dot{width:8px;height:8px;border-radius:50%;background:#86efac;box-shadow:0 0 0 3px rgba(134,239,172,.3)}
+  .brand{font-weight:600;font-size:14px;letter-spacing:.2px}
+  .brand span{color:var(--tx3);font-weight:400;margin-left:8px;font-size:12px}
+  .stats{display:flex;gap:14px;margin-left:auto;font-size:12px;color:var(--tx2)}
+  .stats b{color:var(--tx);font-weight:500}
+  .tabs{display:flex;gap:2px;margin-left:18px}
+  .tabs button{padding:6px 12px;border-radius:6px;font-size:13px;color:var(--tx2)}
+  .tabs button.on{background:var(--panel2);color:var(--tx)}
 
-  /* 今日任务 */
-  .today{margin:16px 0 6px}
-  .today h2{font-size:14px; margin:0 0 8px; color:var(--muted); font-weight:600; display:flex; align-items:center; gap:6px}
-  .task-list{display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px}
-  .task-card{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:6px}
-  .task-no{font-size:11px; color:var(--accent); font-weight:700}
-  .task-title{font-size:14px; font-weight:600}
-  .task-desc{font-size:12px; color:var(--muted); min-height:32px}
-  .btn{appearance:none; border:none; border-radius:9px; cursor:pointer; font-size:13px; padding:9px 12px; font-weight:600; transition:.15s}
-  .btn-run{background:var(--primary); color:#fff; margin-top:auto}
-  .btn-run:hover{background:var(--primary-d)}
-
-  /* Tabs */
-  .tabs{display:flex; gap:8px; margin:18px 0 12px; flex-wrap:wrap}
-  .tab-btn{flex:1; min-width:96px; background:var(--card); border:1px solid var(--border); color:var(--muted); border-radius:10px; padding:10px 8px; font-size:14px; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px}
-  .tab-btn.active{background:var(--primary); color:#fff; border-color:var(--primary)}
-  .tab-pane{display:none}
-  .tab-pane.active{display:block}
-
-  /* 通用卡片 */
-  .card{background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px; box-shadow:var(--shadow); margin-bottom:14px}
-  .card h3{margin:0 0 10px; font-size:15px; display:flex; align-items:center; gap:8px}
-  .muted{color:var(--muted); font-size:12px}
-  .chip-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px}
-  .chip{background:#eef2ff; border:1px solid #dbe3ff; color:#334155; border-radius:999px; padding:7px 12px; font-size:13px; cursor:pointer; font-weight:600}
-  .chip.active{background:var(--primary); color:#fff; border-color:var(--primary)}
-
-  /* schema */
-  .schema-title{font-size:13px; font-weight:700; margin-bottom:8px}
-  .schema-grid{display:flex; flex-wrap:wrap; gap:6px}
-  .schema-col{background:#f1f5f9; border:1px solid #e2e8f0; border-radius:8px; padding:5px 9px; font-size:12px}
-  .sc-name{font-weight:600; margin-right:6px}
-  .sc-type{color:var(--muted); font-size:11px}
-  .rel-note{margin-top:10px; font-size:12px; color:var(--primary-d); background:#eff6ff; border:1px solid #dbeafe; border-radius:8px; padding:8px 10px}
-  .more-note,.hint{font-size:12px; color:var(--muted); margin-top:8px}
-
-  /* 表格 */
-  .result-scroll{overflow:auto; max-height:520px; border:1px solid var(--border); border-radius:10px}
-  table.data-table{border-collapse:collapse; width:100%; font-size:13px}
-  table.data-table th,table.data-table td{border-bottom:1px solid #eef0f5; padding:7px 10px; text-align:left; white-space:nowrap}
-  table.data-table thead th{position:sticky; top:0; background:#f8fafc; font-weight:700; color:#334155; z-index:1}
-  table.data-table tbody tr:hover{background:#f8fbff}
-  td.money{font-variant-numeric:tabular-nums; text-align:right; font-weight:600}
-  td.dir-借{color:var(--expense)}
-  td.dir-贷{color:var(--income)}
-  .nullv{color:#9ca3af; font-style:italic}
-
-  /* 沙盒 */
-  .toolbar{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px}
-  select,textarea,input[type=text]{
-    font-family:inherit; border:1px solid var(--border); border-radius:9px; padding:9px 10px; font-size:14px; background:#fff; color:var(--ink);
+  main{display:flex;flex:1;min-height:0}
+  aside{
+    width:248px;flex:none;border-right:1px solid var(--line);overflow-y:auto;
+    padding:12px 0 30px;background:var(--panel);
   }
-  textarea#sqlInput{width:100%; min-height:150px; resize:vertical; font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace; font-size:13.5px; line-height:1.5; tab-size:2}
-  .btn-primary{background:var(--primary); color:#fff}
-  .btn-primary:hover{background:var(--primary-d)}
-  .btn-ghost{background:#fff; border:1px solid var(--border); color:var(--ink)}
-  .btn-ghost:hover{border-color:var(--primary); color:var(--primary)}
-  .btn-mini{background:#eef2ff; border:1px solid #dbe3ff; color:#334155; border-radius:7px; padding:5px 9px; font-size:12px; cursor:pointer; font-weight:600}
-  .btn-mini.danger{background:#fef2f2; border-color:#fecaca; color:#b91c1c}
-  #resultArea{min-height:120px; margin-top:10px}
-  .result-meta{font-size:12px; color:var(--muted); margin:8px 2px}
-  .err-msg{background:#fef2f2; border:1px solid #fecaca; color:#b91c1c; border-radius:10px; padding:12px; font-size:13px}
-  .err-hint{margin-top:8px; font-size:12px; color:#7f1d1d; opacity:.85}
-  .ok-msg{background:#ecfdf5; border:1px solid #a7f3d0; color:#047857; border-radius:10px; padding:12px; font-size:13px}
-  .hint{color:var(--muted)}
-
-  /* 保存的查询 */
-  .saved-item{border:1px solid var(--border); border-radius:10px; padding:10px; margin-bottom:8px}
-  .saved-name{font-weight:700; font-size:13px}
-  .saved-sql{font-family:monospace; font-size:11.5px; color:var(--muted); background:#f8fafc; border-radius:6px; padding:6px; margin:6px 0; white-space:pre-wrap; word-break:break-all}
-  .saved-actions{display:flex; gap:6px}
-  .saved-empty{font-size:12px; color:var(--muted)}
-
-  /* 语法速查 */
-  .ref-group{border:1px solid var(--border); border-radius:12px; margin-bottom:10px; overflow:hidden; background:#fff}
-  .ref-head{width:100%; text-align:left; background:#f8fafc; border:none; padding:13px 14px; font-size:14px; font-weight:700; cursor:pointer; display:flex; justify-content:space-between; align-items:center; color:#334155}
-  .ref-head .arrow{transition:.2s; color:var(--muted)}
-  .ref-group.open .ref-head .arrow{transform:rotate(180deg)}
-  .ref-body{display:none; padding:6px 14px 12px}
-  .ref-group.open .ref-body{display:block}
-  .ref-item{border-top:1px dashed #eef0f5; padding:10px 0}
-  .ref-desc{font-size:13px; font-weight:600; margin-bottom:6px}
-  pre.ref-sql{background:#0f172a; color:#e2e8f0; border-radius:8px; padding:10px 12px; font-size:12.5px; overflow:auto; white-space:pre-wrap; word-break:break-all; margin:0 0 8px; cursor:pointer; font-family:"SFMono-Regular",Consolas,Menlo,monospace}
-  pre.ref-sql:hover{outline:2px solid var(--accent)}
-
-  /* toast */
-  #toast{position:fixed; left:50%; bottom:28px; transform:translateX(-50%) translateY(20px); background:#111827; color:#fff; padding:10px 18px; border-radius:10px; font-size:13px; opacity:0; pointer-events:none; transition:.25s; z-index:50}
-  #toast.show{opacity:.95; transform:translateX(-50%) translateY(0)}
-
-  footer{text-align:center; color:var(--muted); font-size:12px; margin-top:24px}
-  footer .badge{display:inline-block; background:#eef2ff; border:1px solid #dbe3ff; color:#334155; border-radius:999px; padding:3px 10px; margin:0 3px}
-
-  @media (max-width:768px){
-    .topbar .row{padding:0}
-    .titlebox h1{font-size:16px}
-    .task-list{grid-template-columns:1fr 1fr}
-    .tabs{gap:6px}
-    .tab-btn{font-size:13px; padding:9px 4px; min-width:0}
-    textarea#sqlInput{min-height:130px}
-    .toolbar .btn,.toolbar select{flex:1 1 auto}
+  .stage-t{
+    padding:14px 16px 6px;font-size:11px;letter-spacing:.8px;text-transform:uppercase;
+    color:var(--tx3);font-weight:500;
   }
-  @media (max-width:480px){
-    .task-list{grid-template-columns:1fr}
-    .sync-pill{display:none}
+  .nav-item{
+    display:flex;gap:9px;align-items:flex-start;padding:8px 16px;cursor:pointer;
+    border-left:2px solid transparent;font-size:13px;line-height:1.45;
+  }
+  .nav-item:hover{background:var(--panel2)}
+  .nav-item.on{background:var(--panel2);border-left-color:var(--accent)}
+  .nav-item .dot{
+    width:14px;height:14px;flex:none;margin-top:2px;border-radius:50%;
+    border:1px solid var(--line);display:flex;align-items:center;justify-content:center;
+    font-size:9px;color:var(--ok);
+  }
+  .nav-item.done .dot{background:rgba(62,201,138,.14);border-color:rgba(62,201,138,.5)}
+  .nav-item .id{color:var(--tx3);font-family:var(--mono);font-size:11px;flex:none;margin-top:2px}
+  .nav-item .tt{flex:1}
+
+  section{flex:1;min-width:0;overflow-y:auto;padding:22px 26px 70px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+        padding:18px 20px;margin-bottom:14px}
+  .card h2{margin:0 0 4px;font-size:16px;font-weight:600;letter-spacing:.2px}
+  .card .meta{font-size:12px;color:var(--tx3);margin-bottom:14px}
+  .scene{
+    background:var(--panel2);border-left:2px solid var(--warn);border-radius:0 6px 6px 0;
+    padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--tx);line-height:1.7;
+  }
+  .label{font-size:11px;letter-spacing:.6px;color:var(--tx3);text-transform:uppercase;
+         margin:14px 0 6px;font-weight:500}
+  .req{font-size:13.5px;line-height:1.75}
+  .cols{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .cols code{
+    font-family:var(--mono);font-size:12px;padding:2px 8px;border-radius:5px;
+    background:var(--panel2);border:1px solid var(--line);color:var(--accent);
+  }
+  details.hint{margin-top:14px;font-size:13px;color:var(--tx2)}
+  details.hint summary{cursor:pointer;color:var(--tx3);font-size:12px;user-select:none}
+  details.hint p{margin:8px 0 0;line-height:1.75}
+
+  .editor{
+    background:#0b0e13;border:1px solid var(--line);border-radius:var(--radius);
+    overflow:hidden;margin-bottom:12px;
+  }
+  .editor .bar2{
+    display:flex;align-items:center;gap:8px;padding:7px 12px;
+    border-bottom:1px solid var(--line);background:var(--panel2);
+  }
+  .editor .bar2 .fname{font-family:var(--mono);font-size:11.5px;color:var(--tx3)}
+  .editor textarea{
+    display:block;width:100%;height:150px;resize:vertical;border:none;outline:none;
+    background:transparent;color:#d8e2ef;font-family:var(--mono);font-size:13px;
+    line-height:1.7;padding:12px 14px;tab-size:2;
+  }
+  .btn{
+    padding:7px 15px;border-radius:7px;font-size:13px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--tx);transition:.12s;
+  }
+  .btn:hover{border-color:#3a4654;background:#222a35}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#06121f;font-weight:600}
+  .btn.primary:hover{background:#57adfb}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+  .actions .kbd{margin-left:auto;font-size:11.5px;color:var(--tx3);font-family:var(--mono)}
+
+  .msg{padding:11px 15px;border-radius:8px;font-size:13px;margin-bottom:14px;line-height:1.65;
+       display:none;white-space:pre-wrap}
+  .msg.show{display:block}
+  .msg.ok{background:rgba(62,201,138,.1);border:1px solid rgba(62,201,138,.3);color:#8ee9bb}
+  .msg.err{background:rgba(240,106,106,.09);border:1px solid rgba(240,106,106,.3);color:#f4a3a3}
+  .msg.info{background:rgba(61,157,246,.08);border:1px solid rgba(61,157,246,.28);color:#a7cdf7}
+
+  .tblwrap{overflow:auto;max-height:440px;border:1px solid var(--line);border-radius:8px;background:#0b0e13}
+  table{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12.5px}
+  th{
+    position:sticky;top:0;background:var(--panel2);text-align:left;padding:8px 12px;
+    font-weight:500;color:var(--tx2);border-bottom:1px solid var(--line);white-space:nowrap;
+  }
+  td{padding:6px 12px;border-bottom:1px solid #1a2029;white-space:nowrap;color:#cfd8e3}
+  tr:hover td{background:#131920}
+  td.num{text-align:right}
+  .null{color:var(--tx3);font-style:italic}
+  .tblmeta{font-size:12px;color:var(--tx3);margin:8px 0 0}
+
+  .dict{display:grid;gap:14px}
+  .tbl-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  .tbl-card header{
+    height:auto;padding:11px 16px;background:var(--panel2);border:none;
+    border-bottom:1px solid var(--line);font-family:var(--mono);font-size:13px;font-weight:500;
+    display:flex;gap:10px;align-items:baseline;
+  }
+  .tbl-card header em{font-style:normal;font-family:inherit;font-size:11.5px;color:var(--tx3)}
+  .tbl-card table{font-size:12.5px}
+  .tbl-card td{border-bottom:1px solid #1a2029;white-space:normal}
+  .tbl-card td:first-child{font-family:var(--mono);color:var(--accent);width:130px}
+  .tbl-card td:nth-child(2){color:var(--tx3);width:80px;font-family:var(--mono);font-size:11.5px}
+  .tipbox{
+    background:rgba(229,162,60,.08);border:1px solid rgba(229,162,60,.25);border-radius:8px;
+    padding:12px 16px;font-size:13px;color:#e8c78d;line-height:1.75;margin-bottom:14px;
+  }
+  .hidden{display:none!important}
+
+  @media(max-width:860px){
+    aside{width:100%;max-height:180px;border-right:none;border-bottom:1px solid var(--line)}
+    main{flex-direction:column}
+    section{padding:16px}
   }
 </style>
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <symbol id="ic-db" viewBox="0 0 24 24"><path d="M12 3c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3z"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></symbol>
-  <symbol id="ic-chart" viewBox="0 0 24 24"><path d="M4 20V10h4v10H4zm6 0V4h4v16h-4zm6 0v-6h4v6h-4z"/></symbol>
-  <symbol id="ic-keyboard" viewBox="0 0 24 24"><path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zm2 4v2h2V9H6zm4 0v2h2V9h-2zm4 0v2h2V9h-2zM6 13v2h2v-2H6zm4 0v2h2v-2h-2zm4 0v2h2v-2h-2z"/></symbol>
-  <symbol id="ic-book" viewBox="0 0 24 24"><path d="M5 4h7v16H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm9 0h5a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-5V4z"/></symbol>
-  <symbol id="ic-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></symbol>
-  <symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M17.65 6.35A8 8 0 1 0 19 13h-2a6 6 0 1 1-1.76-4.24L13 10h7V3l-2.35 3.35z"/></symbol>
-  <symbol id="ic-reset" viewBox="0 0 24 24"><path d="M12 5V2L8 6l4 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></symbol>
-  <symbol id="ic-save" viewBox="0 0 24 24"><path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm3-10H5V5h10v4z"/></symbol>
-  <symbol id="ic-star" viewBox="0 0 24 24"><path d="M12 2l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.8 6.1 20l1.2-6.5L2.5 8.9 9.1 8z"/></symbol>
-  <symbol id="ic-link" viewBox="0 0 24 24"><path d="M3.9 12a3.1 3.1 0 0 1 3.1-3.1h4V7H7a5 5 0 0 0 0 10h4v-1.9H7A3.1 3.1 0 0 1 3.9 12zM8 13h8v-2H8v2zm9-6h-4v1.9h4a3.1 3.1 0 0 1 0 6.2h-4V17h4a5 5 0 0 0 0-10z"/></symbol>
-  <symbol id="ic-upload" viewBox="0 0 24 24"><path d="M12 3l5 5h-3v6h-4V8H7l5-5zM5 18h14v2H5v-2z"/></symbol>
-</svg>
-<header class="topbar">
-  <div class="row">
-    <span class="logo" id="logo"><svg class="logo-ico"><use href="#ic-db"/></svg></span>
-    <div class="titlebox">
-      <h1>SQL 财务分析练习台</h1>
-      <p>新手练 SQL · 虚拟财务数据 · 中文语法速查</p>
-    </div>
-    <span class="spacer"></span>
-    <span class="sync-pill"><span class="dot"></span> 数据本地保存</span>
-  </div>
-</header>
 
-<div class="wrap">
-  <!-- 今日要处理（练习任务） -->
-  <section class="today">
-    <h2><svg class="ico"><use href="#ic-star"/></svg>今天要练习（点“载入并运行”一键开始）</h2>
-    <div class="task-list" id="taskList"></div>
-  </section>
-
-  <!-- Tabs -->
-  <nav class="tabs">
-    <button class="tab-btn active" data-tab="data"><svg class="ico"><use href="#ic-chart"/></svg>数据浏览</button>
-    <button class="tab-btn" data-tab="sandbox"><svg class="ico"><use href="#ic-keyboard"/></svg>SQL 沙盒</button>
-    <button class="tab-btn" data-tab="ref"><svg class="ico"><use href="#ic-book"/></svg>语法速查</button>
-  </nav>
-
-  <!-- 数据浏览 -->
-  <section class="tab-pane active" id="pane-data">
-    <div class="card">
-      <h3><svg class="ico"><use href="#ic-db"/></svg>虚拟财务数据表</h3>
-      <div class="chip-row" id="tableList"></div>
-      <div id="schema"></div>
-      <div style="margin:10px 0">
-        <button class="btn btn-primary" id="importDataBtn"><svg class="ico"><use href="#ic-upload"/></svg>导入我的 Excel / CSV</button>
-        <button class="btn btn-ghost" id="refreshDataBtn"><svg class="ico"><use href="#ic-refresh"/></svg>刷新视图</button>
-        <button class="btn btn-ghost" id="resetBtn"><svg class="ico"><use href="#ic-reset"/></svg>重置为初始数据</button>
-        <input type="file" id="importFile" accept=".xlsx,.csv,.tsv,.txt" style="display:none">
-      </div>
-      <div id="importHint" class="hint" style="display:none"></div>
-      <div id="preview"></div>
-    </div>
-  </section>
-
-  <!-- SQL 沙盒 -->
-  <section class="tab-pane" id="pane-sandbox">
-    <div class="card">
-      <h3><svg class="ico"><use href="#ic-keyboard"/></svg>SQL 练习沙盒</h3>
-      <div class="toolbar">
-        <button class="btn btn-primary" id="runBtn"><svg class="ico"><use href="#ic-play"/></svg>运行 (Ctrl/⌘+Enter)</button>
-        <select id="exampleSel"><option value="">载入示例查询…</option></select>
-        <button class="btn btn-ghost" id="clearBtn">清空</button>
-        <button class="btn btn-ghost" id="csvBtn">导出CSV</button>
-        <button class="btn btn-ghost" id="saveQBtn">保存查询</button>
-      </div>
-      <textarea id="sqlInput" spellcheck="false" placeholder="在此输入 SQL，例如：SELECT * FROM vouchers LIMIT 10;"></textarea>
-      <div id="resultArea"><div class="hint">结果将显示在这里。</div></div>
-    </div>
-    <div class="card">
-      <h3><svg class="ico"><use href="#ic-save"/></svg>我的查询 & 备份</h3>
-      <div class="toolbar">
-        <button class="btn btn-ghost" id="backupBtn">导出备份(JSON)</button>
-        <button class="btn btn-ghost" id="importBtn">导入备份(JSON)</button>
-      </div>
-      <div id="savedList"></div>
-    </div>
-  </section>
-
-  <!-- 语法速查 -->
-  <section class="tab-pane" id="pane-ref">
-    <div class="card">
-      <h3><svg class="ico"><use href="#ic-book"/></svg>SQL 语法速查（中文）</h3>
-      <p class="muted">点击任意示例的“载入沙盒”按钮，即可把该 SQL 填到沙盒并运行。体系覆盖：查询、过滤、聚合、分组、连接、函数、数据操作与建表。</p>
-      <div id="refList"></div>
-    </div>
-  </section>
-
-  <footer>
-    <span class="badge">零外部依赖</span>
-    <span class="badge">纯前端运行</span>
-    <span class="badge">数据离线可用</span><br>
-    本工作台通过 WorkBuddy 资料库能力部署，数据在浏览器本地处理与保存。
-  </footer>
+<div id="boot">
+  <div>正在构建 26,000 行模拟账套…</div>
+  <div class="bar"><i></i></div>
 </div>
 
-<div id="toast"></div>
+<div class="app hidden" id="app">
+  <header>
+    <div class="brand">SQL 财务分析工单台<span>26,000 行模拟账套 · 真 SQLite 引擎</span></div>
+    <div class="tabs">
+      <button id="tabWork" class="on">练习</button>
+      <button id="tabDict">数据字典</button>
+    </div>
+    <div class="stats">
+      <div>销售明细 <b id="sSales">-</b> 行</div>
+      <div>完成 <b id="sDone">0</b>/13</div>
+    </div>
+  </header>
 
-<!-- 引擎（占位，构建时注入） -->
-<script>/* =========================================================================
- * SQL 财务分析练习台 —— 纯 JS 浏览器内 SQL 引擎 + 虚拟财务数据
- * 零外部依赖。支持：SELECT / WHERE / GROUP BY / HAVING / ORDER BY / LIMIT /
- * JOIN(INNER/LEFT/RIGHT) / 聚合函数 / 常用标量函数 / INSERT / UPDATE /
- * DELETE / CREATE TABLE / DROP TABLE / DISTINCT / LIKE / IN / BETWEEN / IS NULL
- * ========================================================================= */
+  <main id="viewWork">
+    <aside id="nav"></aside>
+    <section>
+      <div id="taskCard"></div>
+      <div class="editor">
+        <div class="bar2"><span class="fname">query.sql</span></div>
+        <textarea id="sql" spellcheck="false" placeholder="在这里写 SQL…"></textarea>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="runBtn">运行 (Ctrl+Enter)</button>
+        <button class="btn" id="checkBtn">校验答案</button>
+        <button class="btn" id="ansBtn">看参考答案</button>
+        <button class="btn" id="clearBtn">清空</button>
+        <span class="kbd" id="rowInfo"></span>
+      </div>
+      <div class="msg" id="msg"></div>
+      <div id="result"></div>
+      <div id="answerBox"></div>
+    </section>
+  </main>
 
-/* ---------- 虚拟财务数据（确定性生成，刷新后一致） ---------- */
-function mulberry32(seed) {
-  return function () {
-    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+  <main id="viewDict" class="hidden">
+    <section>
+      <div class="tipbox">
+        这套数据是照真实财务系统扒下来的，但故意留了 6 类脏数据：重复导入的单据、一客多码、名称空格、斜杠日期、退货负数、折扣为空。<b>先做体检再算数</b>，是这套练习要养成的第一个习惯。
+      </div>
+      <div class="dict" id="dict"></div>
+    </section>
+  </main>
+</div>
 
-function buildDB() {
-  const rng = mulberry32(20260827);
-  const rand = (a, b) => a + Math.floor(rng() * (b - a + 1));
-  const pick = (arr) => arr[Math.floor(rng() * arr.length)];
+<script src="src/data.js"></script>
+<script src="src/load.js"></script>
+<script src="src/tasks.js"></script>
+<script>
+const CDN = [
+  { base: 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.13.0/' },
+  { base: 'https://cdn.jsdelivr.net/npm/sql.js@1.13.0/dist/' }
+];
 
-  const departments = [
-    { dept_id: 1, dept_name: '销售一部', region: '华东' },
-    { dept_id: 2, dept_name: '销售二部', region: '华北' },
-    { dept_id: 3, dept_name: '市场部', region: '华南' },
-    { dept_id: 4, dept_name: '财务部', region: '华东' },
-    { dept_id: 5, dept_name: '行政人事部', region: '西南' },
-  ];
-
-  const accounts = [
-    { acc_code: '1001', acc_name: '库存现金', acc_type: '资产' },
-    { acc_code: '1122', acc_name: '应收账款', acc_type: '资产' },
-    { acc_code: '2202', acc_name: '应付账款', acc_type: '负债' },
-    { acc_code: '2221', acc_name: '应交税费', acc_type: '负债' },
-    { acc_code: '3001', acc_name: '实收资本', acc_type: '权益' },
-    { acc_code: '6001', acc_name: '主营业务收入', acc_type: '收入' },
-    { acc_code: '6051', acc_name: '其他业务收入', acc_type: '收入' },
-    { acc_code: '6401', acc_name: '主营业务成本', acc_type: '费用' },
-    { acc_code: '6601', acc_name: '销售费用', acc_type: '费用' },
-    { acc_code: '6602', acc_name: '管理费用', acc_type: '费用' },
-    { acc_code: '6603', acc_name: '财务费用', acc_type: '费用' },
-  ];
-
-  const customers = [
-    { cust_id: 1, cust_name: '北京智联科技有限公司', region: '华北', level: 'A' },
-    { cust_id: 2, cust_name: '上海远见贸易有限公司', region: '华东', level: 'A' },
-    { cust_id: 3, cust_name: '广州海纳实业', region: '华南', level: 'B' },
-    { cust_id: 4, cust_name: '深圳锐进电子', region: '华南', level: 'A' },
-    { cust_id: 5, cust_name: '杭州云栖网络', region: '华东', level: 'B' },
-    { cust_id: 6, cust_name: '成都天府软件', region: '西南', level: 'C' },
-  ];
-
-  const vouchers = [];
-  let vid = 1000;
-  const summaries = {
-    '6001': ['产品销售收入', '销售回款-收入确认', '季度服务收入'],
-    '6051': ['废料处置收入', '租金收入', '咨询服务收入'],
-    '6401': ['采购原材料成本', '直接人工成本', '制造费用结转'],
-    '6601': ['销售人员差旅费', '市场推广费', '业务招待费', '销售提成'],
-    '6602': ['办公费', '管理人员工资', '房租水电', '折旧摊销'],
-    '6603': ['银行手续费', '汇兑损益', '借款利息'],
-    '1122': ['赊销应收账款', '收回客户欠款'],
-    '2202': ['采购应付账款', '支付供应商货款'],
-    '2221': ['计提增值税', '缴纳附加税'],
-    '1001': ['现金收款', '现金付款', '备用金支取'],
-    '3001': ['股东注资', '资本公积转入'],
-  };
-
-  for (let m = 1; m <= 12; m++) {
-    const mm = String(m).padStart(2, '0');
-    for (const d of departments) {
-      // 收入（主营业务收入 + 少量其他业务收入）
-      const baseRev = (d.dept_id === 1 || d.dept_id === 2) ? rand(120000, 260000)
-        : (d.dept_id === 3) ? rand(60000, 120000)
-          : rand(20000, 60000);
-      const rev = baseRev - (baseRev % 100);
-      vouchers.push({ vid: ++vid, date: `2025-${mm}-${rand(1, 27).toString().padStart(2, '0')}`, dept_id: d.dept_id, acc_code: '6001', direction: '贷', amount: rev, cust_id: pick(customers).cust_id, summary: pick(summaries['6001']) });
-      // 应收账款：部分赊销
-      if (rng() > 0.5) {
-        vouchers.push({ vid: ++vid, date: `2025-${mm}-${rand(1, 27).toString().padStart(2, '0')}`, dept_id: d.dept_id, acc_code: '1122', direction: '借', amount: Math.round(rev * 0.4), cust_id: pick(customers).cust_id, summary: '赊销应收账款' });
-      }
-      // 成本 ~ 收入的 55%-65%
-      const cost = Math.round(rev * (0.55 + rng() * 0.1));
-      vouchers.push({ vid: ++vid, date: `2025-${mm}-${rand(1, 27).toString().padStart(2, '0')}`, dept_id: d.dept_id, acc_code: '6401', direction: '借', amount: cost, cust_id: null, summary: pick(summaries['6401']) });
-      // 费用按部门规模
-      const sScale = (d.dept_id <= 2) ? 40000 : (d.dept_id === 3 ? 30000 : 15000);
-      const sCount = rand(1, 3);
-      for (let k = 0; k < sCount; k++) {
-        vouchers.push({ vid: ++vid, date: `2025-${mm}-${rand(1, 27).toString().padStart(2, '0')}`, dept_id: d.dept_id, acc_code: '6601', direction: '借', amount: rand(3000, sScale), cust_id: null, summary: pick(summaries['6601']) });
-      }
-      const mCount = rand(1, 3);
-      for (let k = 0; k < mCount; k++) {
-        vouchers.push({ vid: ++vid, date: `2025-${mm}-${rand(1, 27).toString().padStart(2, '0')}`, dept_id: d.dept_id, acc_code: '6602', direction: '借', amount: rand(2000, 18000), cust_id: null, summary: pick(summaries['6602']) });
-      }
-      // 财务费用（偶尔）
-      if (rng() > 0.6) {
-        vouchers.push({ vid: ++vid, date: `2025-${mm}-${rand(1, 27).toString().padStart(2, '0')}`, dept_id: d.dept_id, acc_code: '6603', direction: '借', amount: rand(500, 4000), cust_id: null, summary: pick(summaries['6603']) });
-      }
-      // 现金
-      vouchers.push({ vid: ++vid, date: `2025-${mm}-${rand(1, 27).toString().padStart(2, '0')}`, dept_id: d.dept_id, acc_code: '1001', direction: rng() > 0.5 ? '借' : '贷', amount: rand(5000, 40000), cust_id: null, summary: pick(summaries['1001']) });
-      // 应交税费
-      vouchers.push({ vid: ++vid, date: `2025-${mm}-${rand(1, 27).toString().padStart(2, '0')}`, dept_id: d.dept_id, acc_code: '2221', direction: '贷', amount: Math.round(rev * 0.13), cust_id: null, summary: '计提增值税' });
-      // 应付账款
-      if (rng() > 0.5) {
-        vouchers.push({ vid: ++vid, date: `2025-${mm}-${rand(1, 27).toString().padStart(2, '0')}`, dept_id: d.dept_id, acc_code: '2202', direction: '贷', amount: rand(10000, 80000), cust_id: null, summary: '采购应付账款' });
-      }
-    }
-    // 实收资本只在 1 月
-    if (m === 1) {
-      vouchers.push({ vid: ++vid, date: '2025-01-10', dept_id: 4, acc_code: '3001', direction: '贷', amount: 1000000, cust_id: null, summary: '股东注资' });
-    }
-  }
-
-  // 预算表（部门 × 费用科目 × 月份）
-  const budgets = [];
-  const budgetAccs = ['6601', '6602', '6603', '6401'];
-  for (const d of departments) {
-    for (const ac of budgetAccs) {
-      const monthly = (ac === '6601' ? (d.dept_id <= 2 ? 90000 : 50000)
-        : ac === '6602' ? 40000 : ac === '6603' ? 8000 : 120000);
-      for (let m = 1; m <= 12; m++) {
-        budgets.push({
-          dept_id: d.dept_id,
-          month: `2025-${String(m).padStart(2, '0')}`,
-          acc_code: ac,
-          budget_amount: monthly + rand(-5000, 5000),
-        });
-      }
-    }
-  }
-
-  const db = {};
-  for (const [name, rows] of [
-    ['departments', departments],
-    ['accounts', accounts],
-    ['customers', customers],
-    ['vouchers', vouchers],
-    ['budgets', budgets],
-  ]) {
-    db[name] = { cols: Object.keys(rows[0]), rows };
-  }
-  return db;
-}
-
-/* ======================== SQL 引擎 ======================== */
-
-let ACTIVE_DB = null;
-let WIN_CACHE = new Map();
-
-function tokenize(sql) {
-  const tokens = [];
-  let i = 0;
-  const n = sql.length;
-  const isDigit = (c) => c >= '0' && c <= '9';
-  const isAlpha = (c) => /[A-Za-z_一-龥]/.test(c);
-  const isAlnum = (c) => isAlpha(c) || isDigit(c);
-  while (i < n) {
-    let c = sql[i];
-    if (c === ' ' || c === '\t' || c === '\n' || c === '\r') { i++; continue; }
-    if (c === '-' && sql[i + 1] === '-') { while (i < n && sql[i] !== '\n') i++; continue; }
-    if (c === '/' && sql[i + 1] === '*') { i += 2; while (i < n && !(sql[i] === '*' && sql[i + 1] === '/')) i++; i += 2; continue; }
-    if (c === "'") {
-      let j = i + 1, s = '';
-      while (j < n) { if (sql[j] === "'") { if (sql[j + 1] === "'") { s += "'"; j += 2; continue; } break; } s += sql[j]; j++; }
-      tokens.push({ t: 'str', v: s }); i = j + 1; continue;
-    }
-    if (c === '"') {
-      let j = i + 1, s = '';
-      while (j < n) { if (sql[j] === '"') { if (sql[j + 1] === '"') { s += '"'; j += 2; continue; } break; } s += sql[j]; j++; }
-      tokens.push({ t: 'str', v: s }); i = j + 1; continue;
-    }
-    if (c === '`') {
-      let j = i + 1, s = '';
-      while (j < n && sql[j] !== '`') { s += sql[j]; j++; }
-      tokens.push({ t: 'ident', v: s }); i = j + 1; continue;
-    }
-    if (isDigit(c) || (c === '.' && isDigit(sql[i + 1]))) {
-      let j = i, s = '';
-      while (j < n && (isDigit(sql[j]) || sql[j] === '.')) { s += sql[j]; j++; }
-      tokens.push({ t: 'num', v: parseFloat(s) }); i = j; continue;
-    }
-    if (isAlpha(c)) {
-      let j = i, s = '';
-      while (j < n && isAlnum(sql[j])) { s += sql[j]; j++; }
-      tokens.push({ t: 'ident', v: s }); i = j; continue;
-    }
-    const two = sql.substr(i, 2);
-    if (['<=', '>=', '!=', '<>'].includes(two)) { tokens.push({ t: 'op', v: two }); i += 2; continue; }
-    if ('=<>+-*/%(),.;'.includes(c)) { tokens.push({ t: 'op', v: c }); i++; continue; }
-    throw new Error('无法识别的字符：' + c);
-  }
-  tokens.push({ t: 'eof' });
-  return tokens;
-}
-
-function parse(sql0) {
-  let sql = sql0.replace(/;\s*$/, '').trim();
-  const tokens = tokenize(sql);
-  let p = 0;
-  const cur = () => tokens[p];
-  const next = () => tokens[p++];
-  const isKw = (k) => cur().t === 'ident' && cur().v.toUpperCase() === k;
-  const isOp = (o) => cur().t === 'op' && cur().v === o;
-  const eatKw = (k) => { if (!isKw(k)) throw new Error(`缺少关键字 ${k}`); next(); };
-  const eatOp = (o) => { if (!isOp(o)) throw new Error(`缺少符号 ${o}`); next(); };
-  const acceptKw = (k) => { if (isKw(k)) { next(); return true; } return false; };
-  const acceptOp = (o) => { if (isOp(o)) { next(); return true; } return false; };
-  const RESERVED = new Set(['SELECT','FROM','WHERE','GROUP','BY','HAVING','ORDER','LIMIT','OFFSET','JOIN','INNER','LEFT','RIGHT','OUTER','ON','AS','AND','OR','NOT','IN','BETWEEN','LIKE','IS','NULL','ASC','DESC','DISTINCT','INSERT','INTO','VALUES','UPDATE','SET','DELETE','CREATE','TABLE','DROP']);
-
-  // ---- 表达式 ----
-  function parseExpr() { return parseOr(); }
-  function parseOr() {
-    let left = parseAnd();
-    while (isKw('OR')) { next(); const right = parseAnd(); left = { type: 'bin', op: 'OR', left, right }; }
-    return left;
-  }
-  function parseAnd() {
-    let left = parseNot();
-    while (isKw('AND')) { next(); const right = parseNot(); left = { type: 'bin', op: 'AND', left, right }; }
-    return left;
-  }
-  function parseNot() {
-    if (isKw('NOT')) { next(); return { type: 'unary', op: 'NOT', expr: parseNot() }; }
-    return parseCmp();
-  }
-  function parseCmp() {
-    const left = parseAdd();
-    if (isKw('IS')) {
-      next(); const notNull = acceptKw('NOT');
-      eatKw('NULL');
-      return { type: 'bin', op: 'ISNULL', left, isNull: !notNull };
-    }
-    if (isKw('IN')) {
-      next(); eatOp('(');
-      if (isKw('SELECT')) {
-        const sub = parseSelect(true);
-        eatOp(')');
-        return { type: 'bin', op: 'IN_SUBQUERY', left, sub };
-      }
-      const list = [];
-      if (!isOp(')')) {
-        list.push(parseValue());
-        while (acceptOp(',')) list.push(parseValue());
-      }
-      eatOp(')');
-      return { type: 'bin', op: 'IN', left, list };
-    }
-    if (isKw('BETWEEN')) {
-      next(); const low = parseAdd(); eatKw('AND'); const high = parseAdd();
-      return { type: 'bin', op: 'BETWEEN', left, low, high };
-    }
-    if (isKw('LIKE')) {
-      next(); const pat = parseAdd();
-      return { type: 'bin', op: 'LIKE', left, right: pat };
-    }
-    if (cur().t === 'op' && ['=', '!=', '<>', '<', '>', '<=', '>='].includes(cur().v)) {
-      const op = next().v; const right = parseAdd();
-      return { type: 'bin', op, left, right };
-    }
-    return left;
-  }
-  function parseValue() {
-    // IN 列表里的值（字面量）
-    if (cur().t === 'num') return { type: 'lit', value: next().v };
-    if (cur().t === 'str') return { type: 'lit', value: next().v };
-    if (isKw('NULL')) { next(); return { type: 'lit', value: null }; }
-    if (cur().t === 'op' && cur().v === '-') { next(); return { type: 'unary', op: '-', expr: parseValue() }; }
-    throw new Error('IN 列表中存在无法解析的值');
-  }
-  function parseAdd() {
-    let left = parseMul();
-    while (cur().t === 'op' && (cur().v === '+' || cur().v === '-')) {
-      const op = next().v; const right = parseMul();
-      left = { type: 'bin', op, left, right };
-    }
-    return left;
-  }
-  function parseMul() {
-    let left = parseUnary();
-    while (cur().t === 'op' && ['*', '/', '%'].includes(cur().v)) {
-      const op = next().v; const right = parseUnary();
-      left = { type: 'bin', op, left, right };
-    }
-    return left;
-  }
-  function parseUnary() {
-    if (cur().t === 'op' && cur().v === '-') { next(); return { type: 'unary', op: '-', expr: parseUnary() }; }
-    if (cur().t === 'op' && cur().v === '+') { next(); return parseUnary(); }
-    return parsePrimary();
-  }
-  function parsePrimary() {
-    if (isKw('CASE')) return parseCase();
-    if (cur().t === 'num') return { type: 'lit', value: next().v };
-    if (cur().t === 'str') return { type: 'lit', value: next().v };
-    if (isKw('NULL')) { next(); return { type: 'lit', value: null }; }
-    if (cur().t === 'op' && cur().v === '(') {
-      const ahead = tokens[p + 1];
-      if (ahead && ahead.t === 'ident' && ahead.v.toUpperCase() === 'SELECT') {
-        next();
-        const sub = parseSelect(true);
-        eatOp(')');
-        return { type: 'scalar_subquery', ast: sub };
-      }
-      next(); const e = parseExpr(); eatOp(')'); return e;
-    }
-    if (cur().t === 'ident') {
-      const name = next().v;
-      // 函数?
-      if (cur().t === 'op' && cur().v === '(') {
-        next();
-        const fname = name.toUpperCase();
-        const AGG = ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'];
-        if (AGG.includes(fname)) {
-          let arg = null, distinct = false;
-          if (fname === 'COUNT' && cur().t === 'op' && cur().v === '*') { next(); arg = '*'; }
-          else {
-            if (acceptKw('DISTINCT')) distinct = true;
-            arg = parseExpr();
-          }
-          eatOp(')');
-          const over = parseOver();
-          if (over) return { type: 'win', fn: fname, arg, distinct, partitionBy: over.partitionBy, orderBy: over.orderBy };
-          return { type: 'agg', fn: fname, arg, distinct };
-        }
-        const args = [];
-        if (!(cur().t === 'op' && cur().v === ')')) {
-          args.push(parseExpr());
-          while (acceptOp(',')) args.push(parseExpr());
-        }
-        eatOp(')');
-        const over = parseOver();
-        if (over) return { type: 'win', fn: fname, args, partitionBy: over.partitionBy, orderBy: over.orderBy };
-        return { type: 'func', name: fname, args };
-      }
-      // 列引用（可能 table.col）
-      let full = name;
-      if (cur().t === 'op' && cur().v === '.') {
-        next();
-        if (cur().t === 'op' && cur().v === '*') { next(); full = name + '.*'; }
-        else if (cur().t === 'ident') full = name + '.' + next().v;
-        else throw new Error('列引用格式错误');
-      }
-      return { type: 'col', name: full };
-    }
-    throw new Error('无法解析表达式，遇到：' + (cur().t === 'eof' ? '语句结尾' : cur().v));
-  }
-
-  function parseOver() {
-    if (!isKw('OVER')) return null;
-    next();
-    eatOp('(');
-    const partitionBy = [];
-    const orderBy = [];
-    if (acceptKw('PARTITION')) {
-      eatKw('BY');
-      partitionBy.push(parseExpr());
-      while (acceptOp(',')) partitionBy.push(parseExpr());
-    }
-    if (acceptKw('ORDER')) {
-      eatKw('BY');
-      do {
-        const e = parseExpr();
-        let dir = 'ASC';
-        if (isKw('ASC')) next();
-        else if (isKw('DESC')) { next(); dir = 'DESC'; }
-        orderBy.push({ expr: e, dir });
-      } while (acceptOp(','));
-    }
-    eatOp(')');
-    return { partitionBy, orderBy };
-  }
-
-  function parseCase() {
-    eatKw('CASE');
-    let operand = null;
-    if (!isKw('WHEN')) operand = parseExpr();
-    const whens = [];
-    while (acceptKw('WHEN')) {
-      const cond = parseExpr();
-      eatKw('THEN');
-      const then = parseExpr();
-      whens.push({ cond, then });
-    }
-    let els = null;
-    if (acceptKw('ELSE')) els = parseExpr();
-    eatKw('END');
-    return { type: 'case', operand, whens, els };
-  }
-
-  // ---- 顶层语句 ----
-  const lc = cur().v ? cur().v.toUpperCase() : '';
-  if (lc === 'SELECT') return parseSelect();
-  if (lc === 'INSERT') return parseInsert();
-  if (lc === 'UPDATE') return parseUpdate();
-  if (lc === 'DELETE') return parseDelete();
-  if (lc === 'CREATE') return parseCreate();
-  if (lc === 'DROP') return parseDrop();
-  throw new Error('仅支持 SELECT / INSERT / UPDATE / DELETE / CREATE / DROP 语句');
-
-  function parseSelect(nested) {
-    eatKw('SELECT');
-    const distinct = acceptKw('DISTINCT');
-    const items = [];
-    function parseItem() {
-      if (cur().t === 'op' && cur().v === '*') { next(); items.push({ type: 'star' }); return; }
-      const expr = parseExpr();
-      let alias = null;
-      if (acceptKw('AS')) { if (cur().t === 'ident') alias = next().v; else throw new Error('AS 后缺少别名'); }
-      else if (cur().t === 'ident' && !RESERVED.has(cur().v.toUpperCase())) alias = next().v;
-      items.push({ type: 'expr', expr, alias });
-    }
-    parseItem();
-    while (acceptOp(',')) parseItem();
-
-    eatKw('FROM');
-    const from = parseTableRef();
-    const joins = [];
-    while (true) {
-      let jt = null;
-      if (acceptKw('JOIN')) jt = 'INNER';
-      else if (acceptKw('INNER')) { eatKw('JOIN'); jt = 'INNER'; }
-      else if (acceptKw('LEFT')) { if (acceptKw('OUTER')) { } eatKw('JOIN'); jt = 'LEFT'; }
-      else if (acceptKw('RIGHT')) { if (acceptKw('OUTER')) { } eatKw('JOIN'); jt = 'RIGHT'; }
-      else break;
-      const tref = parseTableRef();
-      eatKw('ON');
-      const on = parseExpr();
-      joins.push({ type: jt, table: tref, on });
-    }
-
-    let where = null;
-    if (acceptKw('WHERE')) where = parseExpr();
-    let groupBy = [];
-    if (acceptKw('GROUP')) { eatKw('BY'); groupBy.push(parseExpr()); while (acceptOp(',')) groupBy.push(parseExpr()); }
-    let having = null;
-    if (acceptKw('HAVING')) having = parseExpr();
-    let orderBy = [];
-    if (acceptKw('ORDER')) { eatKw('BY'); do { const e = parseExpr(); let dir = 'ASC'; if (isKw('ASC')) { next(); } else if (isKw('DESC')) { next(); dir = 'DESC'; } orderBy.push({ expr: e, dir }); } while (acceptOp(',')); }
-    let limit = null, offset = 0;
-    if (acceptKw('LIMIT')) {
-      if (cur().t === 'num') { limit = next().v; if (acceptKw('OFFSET') && cur().t === 'num') offset = next().v; }
-      else throw new Error('LIMIT 后需为数字');
-    }
-    if (!nested && cur().t !== 'eof') throw new Error('语句末尾存在多余内容：' + cur().v);
-    return { kind: 'select', distinct, items, from, joins, where, groupBy, having, orderBy, limit, offset };
-  }
-
-  function parseTableRef() {
-    if (cur().t === 'op' && cur().v === '(') {
-      const ahead = tokens[p + 1];
-      if (ahead && ahead.t === 'ident' && ahead.v.toUpperCase() === 'SELECT') {
-        next();
-        const sub = parseSelect(true);
-        eatOp(')');
-        let alias = null;
-        if (acceptKw('AS')) { if (cur().t === 'ident') alias = next().v; }
-        else if (cur().t === 'ident' && !RESERVED.has(cur().v.toUpperCase())) alias = next().v;
-        if (!alias) throw new Error('FROM 子查询必须起别名，例如：FROM (SELECT ...) t');
-        return { name: null, alias, subquery: sub };
-      }
-    }
-    if (cur().t !== 'ident') throw new Error('缺少表名');
-    const name = next().v;
-    let alias = null;
-    if (acceptKw('AS')) { if (cur().t === 'ident') alias = next().v; }
-    else if (cur().t === 'ident' && !RESERVED.has(cur().v.toUpperCase())) alias = next().v;
-    return { name, alias };
-  }
-
-  function parseInsert() {
-    eatKw('INSERT'); eatKw('INTO');
-    if (cur().t !== 'ident') throw new Error('缺少表名');
-    const name = next().v;
-    const cols = [];
-    if (acceptOp('(')) { if (cur().t !== 'ident') throw new Error('列名错误'); cols.push(next().v); while (acceptOp(',')) cols.push(next().v); eatOp(')'); }
-    eatKw('VALUES');
-    const rows = [];
-    function parseRow() {
-      eatOp('('); const vals = []; vals.push(parseValue()); while (acceptOp(',')) vals.push(parseValue()); eatOp(')'); return vals;
-    }
-    rows.push(parseRow());
-    while (acceptOp(',')) rows.push(parseRow());
-    if (cur().t !== 'eof') throw new Error('语句末尾存在多余内容');
-    return { kind: 'insert', table: name, cols, rows };
-  }
-
-  function parseUpdate() {
-    eatKw('UPDATE');
-    if (cur().t !== 'ident') throw new Error('缺少表名');
-    const name = next().v;
-    eatKw('SET');
-    const sets = [];
-    function parseSet() {
-      if (cur().t !== 'ident') throw new Error('SET 后缺少列名');
-      const col = next().v; eatOp('='); const val = parseValue(); sets.push({ col, val });
-    }
-    parseSet();
-    while (acceptOp(',')) parseSet();
-    let where = null;
-    if (acceptKw('WHERE')) where = parseExpr();
-    if (cur().t !== 'eof') throw new Error('语句末尾存在多余内容');
-    return { kind: 'update', table: name, sets, where };
-  }
-
-  function parseDelete() {
-    eatKw('DELETE'); eatKw('FROM');
-    if (cur().t !== 'ident') throw new Error('缺少表名');
-    const name = next().v;
-    let where = null;
-    if (acceptKw('WHERE')) where = parseExpr();
-    if (cur().t !== 'eof') throw new Error('语句末尾存在多余内容');
-    return { kind: 'delete', table: name, where };
-  }
-
-  function parseCreate() {
-    eatKw('CREATE'); eatKw('TABLE');
-    if (cur().t !== 'ident') throw new Error('缺少表名');
-    const name = next().v;
-    eatOp('(');
-    const cols = [];
-    function parseCol() {
-      if (cur().t !== 'ident') throw new Error('列名错误');
-      const c = next().v;
-      // 类型（忽略具体类型，仅占位）
-      if (cur().t === 'ident') next();
-      else if (cur().t === 'op' && cur().v === '(') { next(); while (cur().t !== 'op' || cur().v !== ')') next(); next(); }
-      cols.push(c);
-    }
-    parseCol();
-    while (acceptOp(',')) parseCol();
-    eatOp(')');
-    if (cur().t !== 'eof') throw new Error('语句末尾存在多余内容');
-    return { kind: 'create', table: name, cols };
-  }
-
-  function parseDrop() {
-    eatKw('DROP'); eatKw('TABLE');
-    if (cur().t !== 'ident') throw new Error('缺少表名');
-    const name = next().v;
-    if (cur().t !== 'eof') throw new Error('语句末尾存在多余内容');
-    return { kind: 'drop', table: name };
-  }
-}
-
-/* ---------- 求值 ---------- */
-function resolveCol(row, name) {
-  if (name.includes('.')) {
-    if (Object.prototype.hasOwnProperty.call(row, name)) return row[name];
-    return undefined;
-  }
-  if (Object.prototype.hasOwnProperty.call(row, name)) return row[name];
-  for (const k of Object.keys(row)) if (k.endsWith('.' + name)) return row[k];
-  return undefined;
-}
-function toNum(v) { if (v === null || v === undefined || v === '') return 0; const n = Number(v); return isNaN(n) ? 0 : n; }
-function truthy(v) { return v !== null && v !== undefined && v !== false && v !== 0 && v !== ''; }
-function likeOp(v, pat) {
-  if (v === null || v === undefined) return false;
-  let s = String(v).toLowerCase();
-  let p = String(pat).toLowerCase();
-  let rx = '^' + p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*').replace(/_/g, '.') + '$';
-  return new RegExp(rx).test(s);
-}
-function cmpOp(op, a, b) {
-  let x = a, y = b;
-  if (typeof x === 'number' && typeof y === 'number') { /* numeric */ }
-  else { x = (x === null || x === undefined) ? '' : String(x); y = (y === null || y === undefined) ? '' : String(y); }
-  switch (op) {
-    case '=': return x === y;
-    case '!=': case '<>': return x !== y;
-    case '<': return x < y;
-    case '>': return x > y;
-    case '<=': return x <= y;
-    case '>=': return x >= y;
-  }
-  return false;
-}
-function callFunc(name, args) {
-  switch (name) {
-    case 'ROUND': { const n = toNum(args[0]); const d = args.length > 1 ? args[1] : 0; const f = Math.pow(10, d); return Math.round(n * f) / f; }
-    case 'ABS': return Math.abs(toNum(args[0]));
-    case 'COALESCE': return args.find((a) => a !== null && a !== undefined) ?? null;
-    case 'UPPER': return args[0] == null ? null : String(args[0]).toUpperCase();
-    case 'LOWER': return args[0] == null ? null : String(args[0]).toLowerCase();
-    case 'LENGTH': return args[0] == null ? null : String(args[0]).length;
-    case 'CONCAT': return args.map((a) => (a == null ? '' : String(a))).join('');
-    case 'YEAR': { const s = args[0]; return s == null ? null : parseInt(String(s).slice(0, 4), 10); }
-    case 'MONTH': { const s = args[0]; if (!s) return null; const m = String(s).slice(5, 7); return m ? parseInt(m, 10) : null; }
-    case 'SUBSTR': case 'SUBSTRING': { const s = args[0] == null ? '' : String(args[0]); const start = toNum(args[1]); const len = args.length > 2 ? toNum(args[2]) : undefined; return len != null ? s.substr(start - 1, len) : s.substr(start - 1); }
-    default: throw new Error('不支持的函数：' + name);
-  }
-}
-function evalExpr(node, row, groupRows) {
-  switch (node.type) {
-    case 'lit': return node.value;
-    case 'col': return resolveCol(row, node.name);
-    case 'unary':
-      if (node.op === '-') return -toNum(evalExpr(node.expr, row, groupRows));
-      if (node.op === 'NOT') return !truthy(evalExpr(node.expr, row, groupRows));
-      return evalExpr(node.expr, row, groupRows);
-    case 'bin': {
-      const op = node.op;
-      if (op === 'AND') return truthy(evalExpr(node.left, row, groupRows)) && truthy(evalExpr(node.right, row, groupRows));
-      if (op === 'OR') return truthy(evalExpr(node.left, row, groupRows)) || truthy(evalExpr(node.right, row, groupRows));
-      const l = evalExpr(node.left, row, groupRows);
-      if (op === 'ISNULL') return (l === null || l === undefined) === node.isNull;
-      if (op === 'LIKE') return likeOp(l, evalExpr(node.right, row, groupRows));
-      if (op === 'IN') return node.list.some((v) => cmpOp('=', l, v.value));
-      if (op === 'IN_SUBQUERY') {
-        if (!ACTIVE_DB) throw new Error('子查询执行失败：缺少数据库上下文');
-        const res = executeSelect(node.sub, ACTIVE_DB);
-        return res.rows.some((r) => cmpOp('=', l, r[0]));
-      }
-      if (op === 'BETWEEN') return cmpOp('>=', l, evalExpr(node.low, row, groupRows)) && cmpOp('<=', l, evalExpr(node.high, row, groupRows));
-      const r = evalExpr(node.right, row, groupRows);
-      if (['=', '!=', '<>', '<', '>', '<=', '>='].includes(op)) return cmpOp(op, l, r);
-      if (op === '+') return toNum(l) + toNum(r);
-      if (op === '-') return toNum(l) - toNum(r);
-      if (op === '*') return toNum(l) * toNum(r);
-      if (op === '/') { const d = toNum(r); return d === 0 ? null : toNum(l) / d; }
-      if (op === '%') { const d = toNum(r); return d === 0 ? null : toNum(l) % d; }
-      throw new Error('未知运算符 ' + op);
-    }
-    case 'func': return callFunc(node.name, node.args.map((a) => evalExpr(a, row, groupRows)));
-    case 'agg':
-      return evalAgg(node, groupRows);
-    case 'case': {
-      if (node.operand) {
-        const ov = evalExpr(node.operand, row, groupRows);
-        for (const w of node.whens) {
-          if (cmpOp('=', ov, evalExpr(w.cond, row, groupRows))) return evalExpr(w.then, row, groupRows);
-        }
-      } else {
-        for (const w of node.whens) {
-          if (truthy(evalExpr(w.cond, row, groupRows))) return evalExpr(w.then, row, groupRows);
-        }
-      }
-      return node.els ? evalExpr(node.els, row, groupRows) : null;
-    }
-    case 'scalar_subquery': {
-      if (!ACTIVE_DB) throw new Error('子查询执行失败：缺少数据库上下文');
-      const res = executeSelect(node.ast, ACTIVE_DB);
-      if (!res.rows.length) return null;
-      return res.rows[0][0];
-    }
-    case 'win': {
-      const idx = row ? row.__winIdx : undefined;
-      const cache = WIN_CACHE.get(node);
-      if (cache && idx !== undefined && cache.has(idx)) return cache.get(idx);
-      return null;
-    }
-  }
-  throw new Error('无法求值的表达式节点');
-}
-function evalAgg(node, groupRows) {
-  if (node.fn === 'COUNT') {
-    if (node.arg === '*') return groupRows.length;
-    let cnt = 0;
-    const seen = new Set();
-    for (const r of groupRows) {
-      const v = evalExpr(node.arg, r, groupRows);
-      if (v !== null && v !== undefined) {
-        if (node.distinct) { const k = JSON.stringify(v); if (seen.has(k)) continue; seen.add(k); }
-        cnt++;
-      }
-    }
-    return cnt;
-  }
-  const vals = [];
-  const seen = new Set();
-  for (const r of groupRows) {
-    const v = evalExpr(node.arg, r, groupRows);
-    if (v !== null && v !== undefined) {
-      if (node.distinct) { const k = JSON.stringify(v); if (seen.has(k)) continue; seen.add(k); }
-      vals.push(v);
-    }
-  }
-  const nums = vals.map(toNum);
-  switch (node.fn) {
-    case 'SUM': return nums.reduce((a, b) => a + b, 0);
-    case 'AVG': return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
-    case 'MIN': return vals.length ? (typeof vals[0] === 'number' ? Math.min(...nums) : Math.min(...vals.map(String))) : null;
-    case 'MAX': return vals.length ? (typeof vals[0] === 'number' ? Math.max(...nums) : Math.max(...vals.map(String))) : null;
-  }
-  throw new Error('不支持的聚合函数 ' + node.fn);
-}
-
-/* ---------- 执行 ---------- */
-function loadTable(ref, db) {
-  if (ref.subquery) {
-    const res = executeSelect(ref.subquery, db);
-    const cols = res.columns.map(String);
-    const alias = (ref.alias || 'sub').toLowerCase();
-    const out = [];
-    for (const r of res.rows) {
-      const row = {};
-      cols.forEach((c, i) => { row[c] = r[i]; row[alias + '.' + c] = r[i]; });
-      out.push(row);
-    }
-    return { rows: out, alias, tableName: null, cols };
-  }
-  const key = Object.keys(db).find((k) => k.toLowerCase() === ref.name.toLowerCase());
-  if (!key) throw new Error('表不存在：' + ref.name);
-  const t = db[key];
-  const alias = (ref.alias || ref.name).toLowerCase();
-  const out = [];
-  for (const src of t.rows) {
-    const row = {};
-    for (const c of t.cols) {
-      row[c] = src[c];
-      row[alias + '.' + c] = src[c];
-    }
-    out.push(row);
-  }
-  return { rows: out, alias, tableName: key };
-}
-
-function buildJoinedRow(leftRow, rightMeta, rightSrc, joinType, matched) {
-  const row = Object.assign({}, leftRow);
-  const alias = rightMeta.alias;
-  for (const c of rightMeta.cols) {
-    if (matched) {
-      row[c] = rightSrc[c];
-      row[alias + '.' + c] = rightSrc[c];
-    } else {
-      row[c] = null;
-      row[alias + '.' + c] = null;
-    }
-  }
-  return row;
-}
-
-function executeSelect(ast, db) {
-  const fromMeta = loadTable(ast.from, db);
-  let rows = fromMeta.rows;
-
-  for (const j of ast.joins) {
-    const rightMetaRaw = loadTable(j.table, db);
-    const jAlias = j.table.alias || j.table.name || 'sub';
-    const rightMeta = { alias: jAlias.toLowerCase(), cols: j.table.subquery ? rightMetaRaw.cols : db[Object.keys(db).find((k) => k.toLowerCase() === j.table.name.toLowerCase())].cols, tableName: rightMetaRaw.tableName };
-    const newRows = [];
-    for (const lr of rows) {
-      let matchedAny = false;
-      for (const rr of rightMetaRaw.rows) {
-        const combined = buildJoinedRow(lr, rightMeta, rr, j.type, true);
-        if (truthy(evalExpr(j.on, combined, [combined]))) { newRows.push(combined); matchedAny = true; }
-      }
-      if (!matchedAny && (j.type === 'LEFT')) {
-        newRows.push(buildJoinedRow(lr, rightMeta, {}, 'LEFT', false));
-      }
-      if (!matchedAny && (j.type === 'RIGHT')) {
-        // RIGHT: 输出右表所有行，左表为 null
-        for (const rr of rightMetaRaw.rows) {
-          const combined = buildJoinedRow({}, rightMeta, rr, 'RIGHT', true);
-          if (truthy(evalExpr(j.on, combined, [combined]))) newRows.push(combined);
-        }
-      }
-    }
-    rows = newRows;
-  }
-
-  if (ast.where) rows = rows.filter((r) => truthy(evalExpr(ast.where, r, [r])));
-
-  const hasAgg = ast.items.some((it) => it.type === 'expr' && containsAgg(it.expr)) || ast.items.some((it) => it.type === 'star' && false);
-  const grouping = ast.groupBy.length > 0;
-  const needGroup = grouping || hasAgg;
-
-  // 投影：确定每列的 outKey 与表头
-  const columns = []; // {key, header}
-  const headerCount = {};
-  function registerHeader(h) { headerCount[h] = (headerCount[h] || 0) + 1; }
-  function expandStar() {
-    if (ast.joins.length === 0) {
-      const t = db[fromMeta.tableName];
-      for (const c of t.cols) {
-        if (headerCount[c]) continue;
-        columns.push({ key: c, header: c, expr: { type: 'col', name: c } });
-        registerHeader(c);
-      }
-    } else {
-      const sample = rows[0] || lastJoinedRow(ast, db);
-      if (!sample) return;
-      for (const k of Object.keys(sample)) {
-        if (!k.includes('.')) continue;
-        const bare = k.split('.').pop();
-        const header = headerCount[bare] ? k : bare;
-        columns.push({ key: k, header, expr: { type: 'col', name: k } });
-        registerHeader(header);
-      }
-    }
-  }
-  for (const it of ast.items) {
-    if (it.type === 'star') { expandStar(); continue; }
-    let header = it.alias || exprText(it.expr);
-    // 去掉可能重复
-    while (headerCount[header]) header = header + '_';
-    registerHeader(header);
-    columns.push({ key: header, header, expr: it.expr });
-  }
-
-  rows.forEach((r, i) => { if (r && typeof r === 'object') r.__winIdx = i; });
-  {
-    const winNodes = [];
-    const collectWin = (nd) => {
-      if (!nd || typeof nd !== 'object') return;
-      if (nd.type === 'win') { if (!winNodes.includes(nd)) winNodes.push(nd); return; }
-      if (nd.type === 'bin') { collectWin(nd.left); collectWin(nd.right); collectWin(nd.low); collectWin(nd.high); return; }
-      if (nd.type === 'unary') { collectWin(nd.expr); return; }
-      if (nd.type === 'func') { (nd.args || []).forEach(collectWin); return; }
-      if (nd.type === 'case') { collectWin(nd.operand); (nd.whens || []).forEach((w) => { collectWin(w.cond); collectWin(w.then); }); collectWin(nd.els); }
-    };
-    for (const col of columns) collectWin(col.expr);
-    for (const o of ast.orderBy) collectWin(o.expr);
-    collectWin(ast.having);
-    WIN_CACHE = new Map();
-    for (const wn of winNodes) WIN_CACHE.set(wn, computeWindow(wn, rows));
-  }
-
-  // 生成中间结果（含 group 引用用于 HAVING）
-  let inter = [];
-  if (needGroup) {
-    if (grouping) {
-      const groups = new Map();
-      for (const r of rows) {
-        const key = ast.groupBy.map((g) => JSON.stringify(evalExpr(g, r, [r]))).join('\u0001');
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(r);
-      }
-      for (const grp of groups.values()) {
-        inter.push(projectRow(grp[0], grp));
-      }
-    } else {
-      inter.push(projectRow(rows[0] || {}, rows));
-    }
-  } else {
-    for (const r of rows) inter.push(projectRow(r, [r]));
-  }
-
-  function projectRow(rep, grp) {
-    const data = {};
-    for (const col of columns) {
-      if (col.expr) data[col.key] = evalExpr(col.expr, rep, grp);
-    }
-    return { data, group: grp };
-  }
-
-  if (ast.having) inter = inter.filter((it) => truthy(evalExpr(ast.having, Object.assign({}, it.group[0], it.data), it.group)));
-
-  if (ast.orderBy.length) {
-    inter.sort((a, b) => {
-      for (const o of ast.orderBy) {
-        const va = evalExpr(o.expr, a.data, a.group);
-        const vb = evalExpr(o.expr, b.data, b.group);
-        let cmp;
-        if (typeof va === 'number' && typeof vb === 'number') cmp = va - vb;
-        else cmp = String(va == null ? '' : va) < String(vb == null ? '' : vb) ? -1 : String(va == null ? '' : va) > String(vb == null ? '' : vb) ? 1 : 0;
-        if (cmp !== 0) return o.dir === 'DESC' ? -cmp : cmp;
-      }
-      return 0;
-    });
-  }
-
-  if (ast.distinct) {
-    const seen = new Set();
-    inter = inter.filter((it) => {
-      const sig = JSON.stringify(columns.map((c) => it.data[c.key]));
-      if (seen.has(sig)) return false; seen.add(sig); return true;
-    });
-  }
-
-  if (ast.limit != null) inter = inter.slice(ast.offset, ast.offset + ast.limit);
-
-  const outRows = inter.map((it) => columns.map((c) => it.data[c.key]));
-  return { columns: columns.map((c) => c.header), rows: outRows, rowCount: outRows.length };
-}
-
-function aggOf(fn, arr) {
-  if (fn === 'COUNT') return arr.length;
-  const nums = arr.map(toNum);
-  if (!nums.length) return fn === 'SUM' ? 0 : null;
-  if (fn === 'SUM') return nums.reduce((a, b) => a + b, 0);
-  if (fn === 'AVG') return nums.reduce((a, b) => a + b, 0) / nums.length;
-  if (fn === 'MIN') return Math.min.apply(null, nums);
-  if (fn === 'MAX') return Math.max.apply(null, nums);
-  return null;
-}
-
-function computeWindow(winNode, rows) {
-  const result = new Map();
-  const partitions = new Map();
-  rows.forEach((r, idx) => {
-    const key = winNode.partitionBy && winNode.partitionBy.length
-      ? JSON.stringify(winNode.partitionBy.map((e) => evalExpr(e, r, [r])))
-      : '__ALL__';
-    if (!partitions.has(key)) partitions.set(key, []);
-    partitions.get(key).push(idx);
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = () => rej(new Error(src));
+    document.head.appendChild(s);
   });
-  const orderBy = winNode.orderBy || [];
-  const cmpRows = (ia, ib) => {
-    for (const o of orderBy) {
-      const va = evalExpr(o.expr, rows[ia], [rows[ia]]);
-      const vb = evalExpr(o.expr, rows[ib], [rows[ib]]);
-      let cmp;
-      if (typeof va === 'number' && typeof vb === 'number') cmp = va - vb;
-      else {
-        const sa = String(va == null ? '' : va), sb = String(vb == null ? '' : vb);
-        cmp = sa < sb ? -1 : sa > sb ? 1 : 0;
-      }
-      if (cmp !== 0) return o.dir === 'DESC' ? -cmp : cmp;
-    }
-    return ia - ib;
-  };
-  for (const idxs of partitions.values()) {
-    const sorted = idxs.slice().sort(cmpRows);
-    const fn = (winNode.fn || '').toUpperCase();
-    if (fn === 'ROW_NUMBER') {
-      sorted.forEach((idx, i) => result.set(idx, i + 1));
-    } else if (fn === 'RANK' || fn === 'DENSE_RANK') {
-      const keys = sorted.map((idx) => (orderBy.length ? JSON.stringify(orderBy.map((o) => evalExpr(o.expr, rows[idx], [rows[idx]]))) : '__S__'));
-      if (fn === 'DENSE_RANK') {
-        let dense = 0;
-        sorted.forEach((idx, i) => {
-          if (i === 0 || keys[i] !== keys[i - 1]) dense++;
-          result.set(idx, dense);
-        });
-      } else {
-        sorted.forEach((idx, i) => {
-          let firstSame = i;
-          while (firstSame > 0 && keys[firstSame - 1] === keys[i]) firstSame--;
-          result.set(idx, firstSame + 1);
-        });
-      }
-    } else if (['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'].includes(fn)) {
-      const argExpr = winNode.arg !== undefined ? winNode.arg : (winNode.args && winNode.args[0]);
-      const getVal = (idx) => {
-        if (fn === 'COUNT' && (argExpr === '*' || argExpr == null)) return 1;
-        if (argExpr == null || argExpr === '*') return null;
-        return evalExpr(argExpr, rows[idx], [rows[idx]]);
-      };
-      if (orderBy.length) {
-        const acc = [];
-        sorted.forEach((idx) => {
-          const v = getVal(idx);
-          if (v !== null && v !== undefined) acc.push(v);
-          result.set(idx, aggOf(fn, acc));
-        });
-      } else {
-        const all = [];
-        sorted.forEach((idx) => { const v = getVal(idx); if (v !== null && v !== undefined) all.push(v); });
-        const total = aggOf(fn, all);
-        sorted.forEach((idx) => result.set(idx, total));
-      }
-    }
-  }
-  return result;
 }
 
-function lastJoinedRow(ast, db) {
-  // 当结果为空且含 * 时用于推断列
-  const fromMeta = loadTable(ast.from, db);
-  let sample = Object.assign({}, fromMeta.rows[0] || {});
-  for (const j of ast.joins) {
-    const rt = db[Object.keys(db).find((k) => k.toLowerCase() === j.table.name.toLowerCase())];
-    const ra = (j.table.alias || j.table.name).toLowerCase();
-    const r0 = rt.rows[0] || {};
-    for (const c of rt.cols) { sample[c] = null; sample[ra + '.' + c] = null; }
-  }
-  return sample;
+const DICT = [
+  { name: 'dim_customer', note: '客户主数据 · 128 行', cols: [
+    ['cust_code', 'TEXT', '客户编码，主键'],
+    ['cust_name', 'TEXT', '客户名称。部分带尾随空格，做分组前记得 TRIM'],
+    ['industry', 'TEXT', '所属行业'],
+    ['region', 'TEXT', '区域：华东/华北/华南/西南/华中'],
+    ['sales_owner', 'TEXT', '销售负责人'],
+    ['credit_limit', 'REAL', '信用额度（元）'],
+    ['onboard_date', 'TEXT', '建档日期']
+  ]},
+  { name: 'dim_product', note: '产品主数据 · 59 行', cols: [
+    ['sku', 'TEXT', '产品编码，主键'],
+    ['sku_name', 'TEXT', '产品名称'],
+    ['category', 'TEXT', '品类：服务器/网络设备/存储设备/软件授权/技术服务/云服务/耗材/配件'],
+    ['std_cost', 'REAL', '标准成本（单位成本），算毛利要用它'],
+    ['list_price', 'REAL', '标准售价']
+  ]},
+  { name: 'dim_dept', note: '部门 · 8 行', cols: [
+    ['dept_id', 'INTEGER', '部门 ID'],
+    ['dept_name', 'TEXT', '部门名称'],
+    ['cost_center', 'TEXT', '成本中心编码']
+  ]},
+  { name: 'fact_sales', note: '销售明细 · 26,000 行', cols: [
+    ['bill_no', 'TEXT', '单据号。一张单可能有多个产品，所以同号多行是正常的'],
+    ['bill_date', 'TEXT', '单据日期。绝大多数是 YYYY-MM-DD，少量是 YYYY/MM/DD'],
+    ['cust_code', 'TEXT', '客户编码，关联 dim_customer'],
+    ['sku', 'TEXT', '产品编码，关联 dim_product'],
+    ['qty', 'REAL', '数量。负数代表退货'],
+    ['unit_price', 'REAL', '不含税单价'],
+    ['discount', 'REAL', '折扣率 0~0.42。有少量 NULL'],
+    ['tax_rate', 'REAL', '税率 13% / 6%']
+  ]},
+  { name: 'fact_gl', note: '总账凭证明细 · 836 行', cols: [
+    ['voucher_no', 'TEXT', '凭证号'],
+    ['post_date', 'TEXT', '记账日期'],
+    ['period', 'TEXT', '会计期间，如 2026-10'],
+    ['acc_code', 'TEXT', '科目编码。6001 主营业务收入、6401 主营业务成本、6601-6604 各项费用'],
+    ['acc_name', 'TEXT', '科目名称'],
+    ['dept_id', 'INTEGER', '部门，关联 dim_dept'],
+    ['debit', 'REAL', '借方发生额'],
+    ['credit', 'REAL', '贷方发生额'],
+    ['summary', 'TEXT', '摘要']
+  ]},
+  { name: 'dim_budget', note: '预算表', cols: [
+    ['period', 'TEXT', '会计期间'],
+    ['dept_id', 'INTEGER', '部门'],
+    ['acc_code', 'TEXT', '费用科目编码'],
+    ['budget_amt', 'REAL', '预算金额（元）']
+  ]},
+  { name: 'fact_ar', note: '应收账款发票 · 2,300 行', cols: [
+    ['cust_code', 'TEXT', '客户编码'],
+    ['invoice_no', 'TEXT', '发票号'],
+    ['invoice_date', 'TEXT', '开票日期'],
+    ['due_date', 'TEXT', '到期日，账期 60 天'],
+    ['amount', 'REAL', '发票金额'],
+    ['settled_amt', 'REAL', '已收金额。amount - settled_amt 就是未收余额'],
+    ['snapshot_date', 'TEXT', '账龄快照日，统一为 2026-10-31']
+  ]}
+];
+
+let db = null, curIdx = 0, store = {};
+const LS = 'sql-lab-v2';
+
+function save() {
+  try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {}
+}
+function restore() {
+  try { store = JSON.parse(localStorage.getItem(LS) || '{}'); } catch (e) { store = {}; }
 }
 
-function containsAgg(node) {
-  if (!node) return false;
-  if (node.type === 'agg') return true;
-  if (node.type === 'bin') return containsAgg(node.left) || containsAgg(node.right) || (node.low && containsAgg(node.low)) || (node.high && containsAgg(node.high));
-  if (node.type === 'unary') return containsAgg(node.expr);
-  if (node.type === 'func') return node.args.some((a) => containsAgg(a));
-  if (node.type === 'case') return containsAgg(node.operand) || node.whens.some((w) => containsAgg(w.cond) || containsAgg(w.then)) || containsAgg(node.els);
-  return false;
+function fmtCell(v) {
+  if (v === null || v === undefined) return '<span class="null">NULL</span>';
+  if (typeof v === 'number') {
+    return Number.isInteger(v)
+      ? v.toLocaleString('zh-CN')
+      : v.toLocaleString('zh-CN', { minimumFractionDigits: 1, maximumFractionDigits: 4 });
+  }
+  return String(v).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 }
 
-function exprText(node) {
-  if (node.type === 'case') return 'CASE';
-  if (node.type === 'win') return node.fn + '() OVER';
-  if (node.type === 'scalar_subquery') return '(subquery)';
-  if (node.type === 'col') return node.name;
-  if (node.type === 'lit') return node.value == null ? 'NULL' : (typeof node.value === 'number' ? String(node.value) : "'" + node.value + "'");
-  if (node.type === 'agg') return node.fn + '(' + (node.arg === '*' ? '*' : exprText(node.arg)) + ')';
-  if (node.type === 'func') return node.name + '(' + node.args.map((a) => exprText(a.expr !== undefined ? a.expr : a)).join(', ') + ')';
-  if (node.type === 'unary') return node.op + exprText(node.expr);
-  if (node.type === 'bin') {
-    if (node.op === 'ISNULL') return exprText(node.left) + (node.isNull ? ' IS NULL' : ' IS NOT NULL');
-    if (node.op === 'LIKE') return exprText(node.left) + ' LIKE ' + exprText(node.right);
-    if (node.op === 'IN') return exprText(node.left) + ' IN (' + node.list.map((v) => exprText(v)).join(', ') + ')';
-    if (node.op === 'BETWEEN') return exprText(node.left) + ' BETWEEN ' + exprText(node.low) + ' AND ' + exprText(node.high);
-    return exprText(node.left) + ' ' + node.op + ' ' + exprText(node.right);
-  }
-  return '?';
+function renderTable(res, limit) {
+  if (!res || !res.length) return '<div class="tblmeta">查询没有返回结果集（INSERT/UPDATE 之类），执行成功。</div>';
+  const { columns, values } = res[0];
+  const max = limit || 300;
+  const rows = values.slice(0, max);
+  let html = '<div class="tblwrap"><table><thead><tr>';
+  columns.forEach((c) => { html += '<th>' + c + '</th>'; });
+  html += '</tr></thead><tbody>';
+  rows.forEach((r) => {
+    html += '<tr>';
+    r.forEach((v) => {
+      const isNum = typeof v === 'number';
+      html += '<td' + (isNum ? ' class="num"' : '') + '>' + fmtCell(v) + '</td>';
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  html += '<div class="tblmeta">返回 ' + values.length + ' 行 × ' + columns.length + ' 列';
+  if (values.length > max) html += '（表格仅显示前 ' + max + ' 行）';
+  html += '</div>';
+  return html;
 }
 
-function executeDML(ast, db) {
-  if (ast.kind === 'create') {
-    if (db[ast.table]) throw new Error('表已存在：' + ast.table);
-    db[ast.table] = { cols: ast.cols, rows: [] };
-    return { columns: ['操作'], rows: [['CREATE TABLE']], rowCount: 0, message: `已创建表 ${ast.table}` };
-  }
-  if (ast.kind === 'drop') {
-    if (!db[ast.table]) throw new Error('表不存在：' + ast.table);
-    delete db[ast.table];
-    return { columns: ['操作'], rows: [['DROP TABLE']], rowCount: 0, message: `已删除表 ${ast.table}` };
-  }
-  const key = Object.keys(db).find((k) => k.toLowerCase() === ast.table.toLowerCase());
-  if (!key) throw new Error('表不存在：' + ast.table);
-  const t = db[key];
-  if (ast.kind === 'insert') {
-    let affected = 0;
-    for (const vals of ast.rows) {
-      if (ast.cols.length !== vals.length) throw new Error('列数与值数量不一致');
-      const row = {};
-      for (let i = 0; i < t.cols.length; i++) row[t.cols[i]] = null;
-      ast.cols.forEach((c, i) => { row[c] = vals[i].value; });
-      // 自动补 id
-      const idCol = t.cols.find((c) => /id$/i.test(c));
-      if (idCol && (row[idCol] === null || row[idCol] === undefined)) {
-        const maxId = t.rows.reduce((m, r) => Math.max(m, Number(r[idCol]) || 0), 0);
-        row[idCol] = maxId + 1;
-      }
-      t.rows.push(row);
-      affected++;
-    }
-    return { columns: [], rows: [], rowCount: affected, message: `已插入 ${affected} 行` };
-  }
-  if (ast.kind === 'update' || ast.kind === 'delete') {
-    let affected = 0;
-    for (const r of t.rows) {
-      const hit = ast.where ? truthy(evalExpr(ast.where, r, [r])) : true;
-      if (!hit) continue;
-      if (ast.kind === 'update') { for (const s of ast.sets) r[s.col] = s.val.value; }
-      else { r.__deleted = true; }
-      affected++;
-    }
-    if (ast.kind === 'delete') t.rows = t.rows.filter((r) => !r.__deleted);
-    const op = ast.kind === 'update' ? 'UPDATE' : 'DELETE';
-    return { columns: [], rows: [], rowCount: affected, message: `已${ast.kind === 'update' ? '更新' : '删除'} ${affected} 行` };
-  }
+function showMsg(type, text) {
+  const m = document.getElementById('msg');
+  m.className = 'msg show ' + type;
+  m.textContent = text;
+}
+function hideMsg() {
+  document.getElementById('msg').className = 'msg';
 }
 
-function runSQL(sql, db) {
-  const prev = ACTIVE_DB;
-  ACTIVE_DB = db;
+function taskKey(i) { return TASKS[i].id; }
+function getDraft(i) {
+  const k = taskKey(i);
+  return store[k] && store[k].sql ? store[k].sql : '';
+}
+function setDone(i, done) {
+  const k = taskKey(i);
+  store[k] = store[k] || {};
+  store[k].done = done;
+  save();
+  renderNav();
+}
+
+function renderNav() {
+  const nav = document.getElementById('nav');
+  let html = '', last = '';
+  let done = 0;
+  TASKS.forEach((t, i) => {
+    if (store[t.id] && store[t.id].done) done++;
+    if (t.stage !== last) { html += '<div class="stage-t">' + t.stage + '</div>'; last = t.stage; }
+    const cls = (i === curIdx ? ' on' : '') + (store[t.id] && store[t.id].done ? ' done' : '');
+    html += '<div class="nav-item' + cls + '" data-i="' + i + '">' +
+      '<span class="dot">' + (store[t.id] && store[t.id].done ? '✓' : '') + '</span>' +
+      '<span class="id">' + t.id + '</span><span class="tt">' + t.title + '</span></div>';
+  });
+  nav.innerHTML = html;
+  nav.querySelectorAll('.nav-item').forEach((el) => {
+    el.onclick = () => openTask(+el.dataset.i);
+  });
+  document.getElementById('sDone').textContent = done;
+}
+
+function openTask(i) {
+  curIdx = i;
+  const t = TASKS[i];
+  document.getElementById('taskCard').innerHTML =
+    '<div class="card">' +
+    '<h2>' + t.id + '　' + t.title + '</h2>' +
+    '<div class="meta">' + t.stage + '</div>' +
+    '<div class="scene">' + t.scene + '</div>' +
+    '<div class="label">交付要求</div>' +
+    '<div class="req">' + t.ask + '</div>' +
+    '<div class="label">输出列（按此顺序）</div>' +
+    '<div class="cols">' + t.cols.map((c) => '<code>' + c + '</code>').join('') + '</div>' +
+    '<details class="hint"><summary>卡住了？点开提示</summary><p>' + t.hint + '</p></details>' +
+    '</div>';
+  const ta = document.getElementById('sql');
+  ta.value = getDraft(i);
+  document.getElementById('result').innerHTML = '';
+  document.getElementById('answerBox').innerHTML = '';
+  hideMsg();
+  document.getElementById('rowInfo').textContent = '';
+  renderNav();
+  ta.focus();
+}
+
+function runSql(sql) {
+  return db.exec(sql);
+}
+
+function run() {
+  const sql = document.getElementById('sql').value.trim();
+  const k = taskKey(curIdx);
+  store[k] = store[k] || {};
+  store[k].sql = sql;
+  save();
+  if (!sql) { showMsg('info', '先写点 SQL 再运行。'); return; }
   try {
-    const ast = parse(sql);
-    if (ast.kind === 'select') return executeSelect(ast, db);
-    return executeDML(ast, db);
-  } finally { ACTIVE_DB = prev; }
+    const res = runSql(sql);
+    document.getElementById('result').innerHTML = renderTable(res);
+    hideMsg();
+  } catch (e) {
+    document.getElementById('result').innerHTML = '';
+    showMsg('err', 'SQL 报错：' + e.message);
+  }
 }
 
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { buildDB, runSQL, tokenize, parse };
+function sameVal(a, b) {
+  if (a === null || a === undefined) return b === null || b === undefined;
+  if (b === null || b === undefined) return false;
+  if (typeof a === 'number' && typeof b === 'number') {
+    if (Math.abs(a - b) <= 0.02) return true;
+    if (Math.abs(a - b) <= Math.max(Math.abs(a), Math.abs(b)) * 0.001) return true;
+    return false;
+  }
+  return String(a).trim() === String(b).trim();
 }
 
-/* ======================== 测试 ======================== */
-if (typeof require !== 'undefined' && require.main === module) {
-  const db = buildDB();
-  const tests = [
-    "SELECT * FROM vouchers LIMIT 3",
-    "SELECT vid, date, amount FROM vouchers WHERE amount > 100000 ORDER BY amount DESC LIMIT 5",
-    "SELECT dept_id, direction, SUM(amount) AS total FROM vouchers GROUP BY dept_id, direction ORDER BY dept_id, direction",
-    "SELECT acc_code, COUNT(*) AS cnt, SUM(amount) AS amt FROM vouchers GROUP BY acc_code ORDER BY amt DESC",
-    "SELECT d.dept_name, SUM(v.amount) AS expense FROM vouchers v JOIN departments d ON v.dept_id = d.dept_id WHERE v.acc_code = '6601' GROUP BY d.dept_name ORDER BY expense DESC",
-    "SELECT * FROM vouchers WHERE summary LIKE '%应收%' LIMIT 5",
-    "SELECT * FROM vouchers WHERE dept_id IN (1,2,3) AND direction = '借' LIMIT 3",
-    "SELECT * FROM vouchers WHERE amount BETWEEN 50000 AND 60000 LIMIT 3",
-    "SELECT dept_id, COUNT(*) AS cnt FROM vouchers GROUP BY dept_id HAVING COUNT(*) > 100",
-    "SELECT DISTINCT acc_type FROM accounts",
-    "SELECT YEAR(date) AS yr, MONTH(date) AS mo, SUM(amount) AS revenue FROM vouchers WHERE acc_code = '6001' AND direction = '贷' GROUP BY YEAR(date), MONTH(date) ORDER BY yr, mo",
-    "SELECT c.cust_name, SUM(v.amount) AS ar FROM vouchers v JOIN customers c ON v.cust_id = c.cust_id WHERE v.acc_code = '1122' AND v.direction = '借' GROUP BY c.cust_name ORDER BY ar DESC",
-    "SELECT d.dept_name, b.month, SUM(v.amount) AS actual FROM vouchers v JOIN departments d ON v.dept_id = d.dept_id JOIN budgets b ON b.dept_id = v.dept_id AND b.month = SUBSTR(v.date,1,7) AND b.acc_code = v.acc_code WHERE v.acc_code = '6601' GROUP BY d.dept_name, b.month ORDER BY d.dept_name, b.month LIMIT 6",
-  ];
-  let pass = 0;
-  for (const t of tests) {
-    try {
-      const r = runSQL(t, db);
-      console.log('✓', t.slice(0, 70));
-      console.log('   cols:', r.columns.join(', '), '| rows:', r.rowCount);
-      if (r.rows[0]) console.log('   sample:', JSON.stringify(r.rows[0]).slice(0, 160));
-      pass++;
-    } catch (e) {
-      console.log('✗', t.slice(0, 70), '\n   错误:', e.message);
+function check() {
+  const sql = document.getElementById('sql').value.trim();
+  const t = TASKS[curIdx];
+  if (!sql) { showMsg('info', '先写点 SQL 再校验。'); return; }
+  let mine, expect;
+  try { mine = runSql(sql); } catch (e) { showMsg('err', 'SQL 报错：' + e.message); return; }
+  try { expect = runSql(t.answer); } catch (e) { showMsg('err', '答案执行异常：' + e.message); return; }
+
+  document.getElementById('result').innerHTML = renderTable(mine);
+
+  if (!mine.length || !expect.length) {
+    showMsg('err', '你的查询没有返回结果集。'); return;
+  }
+  const A = mine[0], B = expect[0];
+
+  if (A.values.length !== B.values.length) {
+    showMsg('err', '行数对不上：你返回 ' + A.values.length + ' 行，应为 ' + B.values.length + ' 行。\n' +
+      (A.values.length > B.values.length ? '多半是没排除干扰行（重复单据 / 缺月客户 / 未过滤区域）。' : '可能漏了某些月份或分组维度。'));
+    return;
+  }
+  if (A.columns.length !== B.columns.length) {
+    showMsg('err', '列数对不上：你返回 ' + A.columns.length + ' 列，应为 ' + B.columns.length + ' 列。\n输出列：' + t.cols.join(' / '));
+    return;
+  }
+  let badRow = -1, badCol = -1;
+  for (let r = 0; r < A.values.length && badRow < 0; r++) {
+    for (let c = 0; c < A.columns.length; c++) {
+      if (!sameVal(A.values[r][c], B.values[r][c])) { badRow = r; badCol = c; break; }
     }
   }
-  console.log(`\n通过 ${pass}/${tests.length}`);
+  if (badRow >= 0) {
+    showMsg('err', '行数对了，但值不对。第 ' + (badRow + 1) + ' 行「' + B.columns[badCol] + '」列：\n' +
+      '你的结果：' + fmtCell(A.values[badRow][badCol]).replace(/<[^>]+>/g, '') + '\n' +
+      '正确结果：' + fmtCell(B.values[badRow][badCol]).replace(/<[^>]+>/g, '') + '\n\n' +
+      '常见原因：没去重、没处理退货负数、没 COALESCE 空折扣、日期斜杠没统一、排序不稳定导致行错位。');
+    return;
+  }
+  showMsg('ok', '✓ 通过。这一题的结果和参考答案完全一致（' + B.values.length + ' 行）。');
+  setDone(curIdx, true);
 }
-</script>
-<!-- 界面逻辑 -->
-<script>/* ============================================================
- * SQL 财务分析练习台 —— 界面与交互逻辑（浏览器端）
- * 依赖：sql_engine.js 暴露的 buildDB() / runSQL()
- * ============================================================ */
-(function () {
-  'use strict';
 
-  const LS_DB = 'wb_sqlfin_db_v1';
-  const LS_Q = 'wb_sqlfin_queries_v1';
-  const MAX_ROWS = 800; // 结果渲染上限
+function showAnswer() {
+  const t = TASKS[curIdx];
+  document.getElementById('answerBox').innerHTML =
+    '<div class="card" style="border-color:#2a3a4d">' +
+    '<div class="label" style="margin-top:0">参考答案</div>' +
+    '<pre style="margin:0;font-family:var(--mono);font-size:12.5px;line-height:1.7;color:#a7cdf7;white-space:pre-wrap">' +
+    t.answer.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])) + '</pre></div>';
+}
 
-  let DB = null;
+function renderDict() {
+  document.getElementById('dict').innerHTML = DICT.map((t) =>
+    '<div class="tbl-card"><header>' + t.name + '<em>' + t.note + '</em></header>' +
+    '<table>' + t.cols.map((c) =>
+      '<tr><td>' + c[0] + '</td><td>' + c[1] + '</td><td>' + c[2] + '</td></tr>').join('') +
+    '</table></div>').join('');
+}
 
-  /* ---------- 持久化 ---------- */
-  function loadDB() {
+async function boot() {
+  restore();
+  try {
+    await bootInner();
+  } catch (e) {
+    document.getElementById('boot').style.display = 'flex';
+    document.getElementById('boot').innerHTML =
+      '<div style="max-width:520px;text-align:center;line-height:1.8">' +
+      '初始化失败：' + (e && e.message ? e.message : e) +
+      '<br><span style="font-size:12px;color:#6b7686">若是网络问题，请确认能访问 cdnjs 或 jsdelivr；' +
+      '若是语法问题，请按 F12 看控制台。</span></div>';
+  }
+}
+
+async function bootInner() {
+  let SQL = null, base = '';
+  for (const src of CDN) {
     try {
-      const s = localStorage.getItem(LS_DB);
-      if (s) return JSON.parse(s);
-    } catch (e) {}
-    return null;
+      await loadScript(src.base + 'sql-wasm.js');
+      SQL = await window.initSqlJs({ locateFile: (f) => src.base + f });
+      base = src.base;
+      break;
+    } catch (e) { /* 换下一个源 */ }
   }
-  function saveDB() {
-    try { localStorage.setItem(LS_DB, JSON.stringify(DB)); } catch (e) {}
-  }
-  function resetDB() {
-    DB = buildDB();
-    saveDB();
-    renderTableList();
-    showTable(currentTable || 'vouchers');
-    toast('已重置为初始虚拟财务数据');
+  if (!SQL) {
+    document.getElementById('boot').innerHTML = '<div>SQL 引擎加载失败，请检查网络后刷新（需要访问 cdnjs 或 jsdelivr）。</div>';
+    return;
   }
 
-  /* ---------- 工具 ---------- */
-  function $(sel, root) { return (root || document).querySelector(sel); }
-  function $all(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
-  function esc(s) {
-    return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-  function fmtNum(v) {
-    if (v == null || v === '') return '';
-    const n = Number(v);
-    if (isNaN(n)) return esc(v);
-    return n.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
-  }
-  function isMoneyCol(h) {
-    return /amount|budget|val|revenue|expense|total|actual|ar|amt|tot|收入|费用|余额|合计|预算/i.test(h);
-  }
-  function toast(msg) {
-    const t = $('#toast');
-    t.textContent = msg;
-    t.classList.add('show');
-    clearTimeout(toast._t);
-    toast._t = setTimeout(() => t.classList.remove('show'), 2200);
-  }
+  db = new SQL.Database();
+  db.run(SCHEMA);
+  const data = buildData();
+  insertAll(db, data);
 
-  /* ---------- 今日练习任务（置顶） ---------- */
-  const TASKS = [
-    { title: '浏览全部凭证', desc: '查看凭证明细表前 20 条，认识数据结构', sql: 'SELECT * FROM vouchers LIMIT 20;' },
-    { title: '各部门销售费用合计', desc: 'JOIN + 聚合函数实战', sql: "SELECT d.dept_name AS 部门, SUM(v.amount) AS 销售费用 FROM vouchers v JOIN departments d ON v.dept_id = d.dept_id WHERE v.acc_code = '6601' GROUP BY d.dept_name ORDER BY 销售费用 DESC;" },
-    { title: '月度收入趋势', desc: '用 YEAR / MONTH 做时间分组', sql: "SELECT YEAR(date) AS 年, MONTH(date) AS 月, SUM(amount) AS 收入 FROM vouchers WHERE acc_code = '6001' AND direction = '贷' GROUP BY YEAR(date), MONTH(date) ORDER BY 年, 月;" },
-    { title: '销售费用预算', desc: '预算表与部门表关联', sql: "SELECT d.dept_name AS 部门, b.month AS 月份, SUM(b.budget_amount) AS 预算费用 FROM budgets b JOIN departments d ON b.dept_id = d.dept_id WHERE b.acc_code = '6601' GROUP BY d.dept_name, b.month ORDER BY d.dept_name, b.month LIMIT 10;" },
-    { title: '应收账款客户排行', desc: 'JOIN 客户表做账龄分析', sql: "SELECT c.cust_name AS 客户, SUM(v.amount) AS 应收余额 FROM vouchers v JOIN customers c ON v.cust_id = c.cust_id WHERE v.acc_code = '1122' AND v.direction = '借' GROUP BY c.cust_name ORDER BY 应收余额 DESC;" },
-  ];
-
-  function renderTasks() {
-    const box = $('#taskList');
-    box.innerHTML = '';
-    TASKS.forEach((t, i) => {
-      const card = document.createElement('div');
-      card.className = 'task-card';
-      card.innerHTML =
-        `<div class="task-no">练习 ${i + 1}</div>` +
-        `<div class="task-title">${esc(t.title)}</div>` +
-        `<div class="task-desc">${esc(t.desc)}</div>` +
-        `<button class="btn btn-run" data-i="${i}">载入并运行</button>`;
-      box.appendChild(card);
-    });
-    $all('.btn-run', box).forEach((b) => {
-      b.addEventListener('click', () => loadTask(TASKS[+b.dataset.i].sql));
-    });
-  }
-  function loadTask(sql) {
-    $('#sqlInput').value = sql;
-    switchTab('sandbox');
-    runSQLcmd();
-  }
-
-  /* ---------- 数据浏览 ---------- */
-  let currentTable = 'vouchers';
-  const RELATIONS = {
-    vouchers: '凭证表：dept_id→departments，acc_code→accounts，cust_id→customers',
-    budgets: '预算表：dept_id→departments，acc_code→accounts',
-    departments: '部门表：被 vouchers / budgets 引用（dept_id）',
-    accounts: '会计科目表：被 vouchers / budgets 引用（acc_code）',
-    customers: '客户表：被 vouchers 引用（cust_id，可为空）',
+  document.getElementById('sSales').textContent = data.sales.length.toLocaleString('zh-CN');
+  document.getElementById('tabWork').onclick = () => {
+    document.getElementById('viewWork').classList.remove('hidden');
+    document.getElementById('viewDict').classList.add('hidden');
+    document.getElementById('tabWork').classList.add('on');
+    document.getElementById('tabDict').classList.remove('on');
+  };
+  document.getElementById('tabDict').onclick = () => {
+    document.getElementById('viewDict').classList.remove('hidden');
+    document.getElementById('viewWork').classList.add('hidden');
+    document.getElementById('tabDict').classList.add('on');
+    document.getElementById('tabWork').classList.remove('on');
   };
 
-  function renderTableList() {
-    const box = $('#tableList');
-    box.innerHTML = '';
-    Object.keys(DB).forEach((name) => {
-      const b = document.createElement('button');
-      b.className = 'chip' + (name === currentTable ? ' active' : '');
-      b.textContent = name + ' (' + DB[name].rows.length + ')';
-      b.addEventListener('click', () => showTable(name));
-      box.appendChild(b);
-    });
-  }
+  document.getElementById('runBtn').onclick = run;
+  document.getElementById('checkBtn').onclick = check;
+  document.getElementById('ansBtn').onclick = showAnswer;
+  document.getElementById('clearBtn').onclick = () => {
+    document.getElementById('sql').value = '';
+    document.getElementById('result').innerHTML = '';
+    document.getElementById('answerBox').innerHTML = '';
+    hideMsg();
+  };
 
-  function typeOf(v) {
-    if (v == null) return 'NULL';
-    if (typeof v === 'number') return '数值';
-    return '文本';
-  }
-
-  function showTable(name) {
-    currentTable = name;
-    renderTableList();
-    const t = DB[name];
-    const cols = t.cols;
-    // schema
-    const schema = $('#schema');
-    schema.innerHTML = '<div class="schema-title">表结构（' + cols.length + ' 列）</div>' +
-      '<div class="schema-grid">' + cols.map((c) => {
-        const sample = t.rows.length ? typeOf(t.rows[0][c]) : '—';
-        return `<div class="schema-col"><span class="sc-name">${esc(c)}</span><span class="sc-type">${sample}</span></div>`;
-      }).join('') + '</div>' +
-      (RELATIONS[name] ? `<div class="rel-note"><svg class="ico-sm"><use href="#ic-link"></use></svg>${esc(RELATIONS[name])}</div>` : '');
-    // preview
-    const prev = $('#preview');
-    const rows = t.rows.slice(0, 100);
-    let html = '<table class="data-table"><thead><tr>' + cols.map((c) => `<th>${esc(c)}</th>`).join('') + '</tr></thead><tbody>';
-    rows.forEach((r) => {
-      html += '<tr>' + cols.map((c) => `<td class="${isMoneyCol(c) ? 'money' : ''} ${c === 'direction' ? 'dir-' + r[c] : ''}">${fmtCell(r[c])}</td>`).join('') + '</tr>';
-    });
-    html += '</tbody></table>';
-    prev.innerHTML = html + (t.rows.length > 100 ? `<div class="more-note">仅显示前 100 行，共 ${t.rows.length} 行</div>` : '');
-  }
-  function fmtCell(v) {
-    if (v == null) return '<span class="nullv">NULL</span>';
-    if (typeof v === 'number') return fmtNum(v);
-    return esc(v);
-  }
-
-  /* ---------- SQL 沙盒 ---------- */
-  const EXAMPLES = [
-    { label: '示例：各部门费用合计', sql: "SELECT d.dept_name AS 部门, SUM(v.amount) AS 费用合计 FROM vouchers v JOIN departments d ON v.dept_id = d.dept_id WHERE v.acc_code = '6601' GROUP BY d.dept_name ORDER BY 费用合计 DESC;" },
-    { label: '示例：月度收入趋势', sql: "SELECT YEAR(date) AS 年, MONTH(date) AS 月, SUM(amount) AS 收入 FROM vouchers WHERE acc_code = '6001' AND direction = '贷' GROUP BY YEAR(date), MONTH(date) ORDER BY 年, 月;" },
-    { label: '示例：应收账款客户排行', sql: "SELECT c.cust_name AS 客户, SUM(v.amount) AS 应收余额 FROM vouchers v JOIN customers c ON v.cust_id = c.cust_id WHERE v.acc_code = '1122' AND v.direction = '借' GROUP BY c.cust_name ORDER BY 应收余额 DESC;" },
-    { label: '示例：查询大额凭证(>10万)', sql: "SELECT vid, date, dept_id, acc_code, amount FROM vouchers WHERE amount > 100000 ORDER BY amount DESC LIMIT 10;" },
-    { label: '示例：LIKE 模糊查询', sql: "SELECT * FROM vouchers WHERE summary LIKE '%应收%' LIMIT 10;" },
-    { label: '示例：INSERT 新增一行', sql: "INSERT INTO vouchers (vid, date, dept_id, acc_code, direction, amount, cust_id, summary) VALUES (9999, '2025-06-15', 1, '6601', '借', 8888, NULL, '练习插入');" },
-    { label: '示例：CREATE 自建练习表', sql: "CREATE TABLE my_practice (id INT, 项目 TEXT, 金额 NUMERIC);" },
-  ];
-
-  function runSQLcmd() {
-    const sql = $('#sqlInput').value.trim();
-    if (!sql) { toast('请输入 SQL 语句'); return; }
-    const t0 = performance.now();
-    let res;
-    try {
-      res = runSQL(sql, DB);
-    } catch (e) {
-      renderError(e.message);
-      return;
+  const ta = document.getElementById('sql');
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); run(); }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const s = ta.selectionStart, en = ta.selectionEnd;
+      ta.value = ta.value.slice(0, s) + '  ' + ta.value.slice(en);
+      ta.selectionStart = ta.selectionEnd = s + 2;
     }
-    const dt = (performance.now() - t0).toFixed(1);
-    // 若是 DML / DDL，持久化
-    if (res.message) { saveDB(); renderTableList(); }
-    renderResult(res, dt);
-  }
+  });
 
-  function renderResult(res, dt) {
-    const area = $('#resultArea');
-    if (res.message && (!res.columns || res.columns.length === 0)) {
-      area.innerHTML = `<div class="ok-msg">${esc(res.message)}</div>`;
-      return;
-    }
-    const cols = res.columns, rows = res.rows;
-    const shown = rows.slice(0, MAX_ROWS);
-    let html = `<div class="result-meta">共 <b>${res.rowCount}</b> 行 · 用时 ${dt} ms` +
-      (rows.length > MAX_ROWS ? ` · 仅渲染前 ${MAX_ROWS} 行` : '') + `</div>`;
-    html += '<div class="result-scroll"><table class="data-table result-table"><thead><tr>' +
-      cols.map((c) => `<th>${esc(c)}</th>`).join('') + '</tr></thead><tbody>';
-    shown.forEach((r) => {
-      html += '<tr>' + cols.map((c, i) => `<td class="${isMoneyCol(c) ? 'money' : ''} ${c === 'direction' ? 'dir-' + r[i] : ''}">${fmtCell(r[i])}</td>`).join('') + '</tr>';
-    });
-    html += '</tbody></table></div>';
-    area.innerHTML = html;
-  }
-  function renderError(msg) {
-    $('#resultArea').innerHTML = `<div class="err-msg">执行出错：${esc(msg)}<div class="err-hint">提示：本练习台支持 SELECT / INSERT / UPDATE / DELETE / CREATE / DROP，以及 JOIN、聚合、GROUP BY、CASE WHEN、子查询、窗口函数 等。</div></div>`;
-  }
+  renderDict();
+  renderNav();
+  openTask(0);
+  document.getElementById('boot').style.display = 'none';
+  document.getElementById('app').classList.remove('hidden');
+}
 
-  function exportCSV() {
-    const area = $('#resultArea');
-    const table = area.querySelector('table');
-    if (!table) { toast('暂无可导出的结果'); return; }
-    const lines = [];
-    $all('tr', table).forEach((tr) => {
-      const cells = $all('th,td', tr).map((c) => {
-        let v = c.textContent;
-        if (/[",\n]/.test(v)) v = '"' + v.replace(/"/g, '""') + '"';
-        return v;
-      });
-      lines.push(cells.join(','));
-    });
-    const csv = '﻿' + lines.join('\n');
-    download(csv, 'sql_result.csv', 'text/csv;charset=utf-8');
-  }
-  function download(content, fname, mime) {
-    const blob = new Blob([content], { type: mime });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = fname;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  }
-
-  /* ---------- 保存的查询 ---------- */
-  function loadQueries() {
-    try { return JSON.parse(localStorage.getItem(LS_Q) || '[]'); } catch (e) { return []; }
-  }
-  function saveQueries(q) { localStorage.setItem(LS_Q, JSON.stringify(q)); }
-  function renderSaved() {
-    const box = $('#savedList');
-    const q = loadQueries();
-    if (!q.length) { box.innerHTML = '<div class="saved-empty">还没有保存的查询。写好 SQL 后点“保存查询”即可收藏。</div>'; return; }
-    box.innerHTML = '';
-    q.forEach((item, i) => {
-      const d = document.createElement('div');
-      d.className = 'saved-item';
-      d.innerHTML = `<div class="saved-name">${esc(item.name)}</div><div class="saved-sql">${esc(item.sql)}</div>` +
-        `<div class="saved-actions"><button class="btn-mini" data-act="load" data-i="${i}">载入</button><button class="btn-mini danger" data-act="del" data-i="${i}">删除</button></div>`;
-      box.appendChild(d);
-    });
-    $all('button', box).forEach((b) => {
-      b.addEventListener('click', () => {
-        const i = +b.dataset.i;
-        const q = loadQueries();
-        if (b.dataset.act === 'load') { $('#sqlInput').value = q[i].sql; switchTab('sandbox'); toast('已载入查询'); }
-        else { q.splice(i, 1); saveQueries(q); renderSaved(); }
-      });
-    });
-  }
-  function saveCurrentQuery() {
-    const sql = $('#sqlInput').value.trim();
-    if (!sql) { toast('没有可保存的 SQL'); return; }
-    const name = prompt('给这条查询起个名字：', sql.slice(0, 20));
-    if (!name) return;
-    const q = loadQueries();
-    q.unshift({ name, sql });
-    saveQueries(q);
-    renderSaved();
-    toast('已保存查询');
-  }
-
-  /* ---------- 备份导入导出 ---------- */
-  function exportBackup() {
-    const payload = { tables: DB, queries: loadQueries() };
-    download('﻿' + JSON.stringify(payload, null, 2), 'sqlfin_backup.json', 'application/json');
-  }
-  function importBackup() {
-    const inp = document.createElement('input');
-    inp.type = 'file'; inp.accept = '.json';
-    inp.onchange = () => {
-      const f = inp.files[0]; if (!f) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        try {
-          const data = JSON.parse(reader.result);
-          if (!data.tables) throw new Error('文件格式不正确');
-          DB = data.tables;
-          if (data.queries) saveQueries(data.queries);
-          saveDB();
-          renderTableList();
-          showTable(currentTable);
-          renderSaved();
-          toast('备份已恢复');
-        } catch (e) { alert('导入失败：' + e.message); }
-      };
-      reader.readAsText(f);
-    };
-    inp.click();
-  }
-
-  /* ---------- 语法速查 ---------- */
-  const REF = [
-    { cat: 'SELECT 基础查询', items: [
-      { d: '查询表中所有列', s: 'SELECT * FROM departments;' },
-      { d: '查询指定列', s: 'SELECT dept_name, region FROM departments;' },
-      { d: '给列起别名（AS 可省略）', s: "SELECT dept_name AS 部门, region 区域 FROM departments;" },
-      { d: '查询不重复的组合（DISTINCT）', s: 'SELECT DISTINCT acc_code FROM vouchers;' },
-    ]},
-    { cat: 'WHERE 条件过滤', items: [
-      { d: '等于 / 不等于', s: "SELECT * FROM vouchers WHERE direction = '借';" },
-      { d: '数值比较（大于）', s: 'SELECT * FROM vouchers WHERE amount > 50000;' },
-      { d: '逻辑 AND / OR', s: "SELECT * FROM vouchers WHERE dept_id = 1 AND direction = '借';" },
-      { d: 'IN 列表匹配', s: 'SELECT * FROM vouchers WHERE dept_id IN (1, 2, 3);' },
-      { d: 'BETWEEN 区间', s: 'SELECT * FROM vouchers WHERE amount BETWEEN 30000 AND 60000;' },
-      { d: 'IS NULL / IS NOT NULL', s: 'SELECT * FROM vouchers WHERE cust_id IS NULL LIMIT 10;' },
-      { d: 'LIKE 模糊匹配（% 任意，_ 单字）', s: "SELECT * FROM vouchers WHERE summary LIKE '%应收%' LIMIT 10;" },
-    ]},
-    { cat: '排序与分页', items: [
-      { d: 'ORDER BY 升序 / 降序', s: 'SELECT * FROM vouchers ORDER BY amount DESC LIMIT 10;' },
-      { d: '多列排序', s: 'SELECT dept_id, amount FROM vouchers ORDER BY dept_id ASC, amount DESC LIMIT 20;' },
-      { d: 'LIMIT 限制返回行数', s: 'SELECT * FROM vouchers LIMIT 5;' },
-    ]},
-    { cat: '聚合函数', items: [
-      { d: 'COUNT 计数', s: 'SELECT COUNT(*) AS 总笔数 FROM vouchers;' },
-      { d: 'SUM 求和', s: "SELECT SUM(amount) AS 总借方 FROM vouchers WHERE direction = '借';" },
-      { d: 'AVG / MIN / MAX', s: "SELECT AVG(amount) AS 平均, MIN(amount) AS 最小, MAX(amount) AS 最大 FROM vouchers WHERE direction = '借';" },
-    ]},
-    { cat: 'GROUP BY 与 HAVING', items: [
-      { d: '按科目分组汇总', s: 'SELECT acc_code, SUM(amount) AS 合计 FROM vouchers GROUP BY acc_code ORDER BY 合计 DESC;' },
-      { d: '多列分组', s: 'SELECT dept_id, direction, SUM(amount) AS 合计 FROM vouchers GROUP BY dept_id, direction ORDER BY dept_id;' },
-      { d: 'HAVING 过滤分组结果', s: 'SELECT dept_id, COUNT(*) AS 笔数 FROM vouchers GROUP BY dept_id HAVING COUNT(*) > 100;' },
-      { d: 'HAVING 用聚合别名', s: 'SELECT acc_code, SUM(amount) AS 合计 FROM vouchers GROUP BY acc_code HAVING 合计 > 1000000;' },
-    ]},
-    { cat: '多表连接 JOIN', items: [
-      { d: 'INNER JOIN 内连接', s: "SELECT d.dept_name, v.amount FROM vouchers v JOIN departments d ON v.dept_id = d.dept_id LIMIT 10;" },
-      { d: 'LEFT JOIN 左连接', s: "SELECT d.dept_name, SUM(v.amount) AS 费用 FROM vouchers v LEFT JOIN departments d ON v.dept_id = d.dept_id GROUP BY d.dept_name;" },
-      { d: '三表连接（凭证+部门+客户）', s: "SELECT c.cust_name, SUM(v.amount) AS 应收 FROM vouchers v JOIN customers c ON v.cust_id = c.cust_id WHERE v.acc_code = '1122' GROUP BY c.cust_name;" },
-      { d: '连接预算与实际（预算执行率基础）', s: "SELECT d.dept_name, b.month, SUM(b.budget_amount) AS 预算 FROM budgets b JOIN departments d ON b.dept_id = d.dept_id WHERE b.acc_code = '6601' GROUP BY d.dept_name, b.month LIMIT 12;" },
-    ]},
-    { cat: 'CASE WHEN 条件判断', items: [
-      { d: '搜索型 CASE（最常用）', s: "SELECT vid, amount, CASE WHEN amount >= 100000 THEN '大额' WHEN amount >= 10000 THEN '中额' ELSE '小额' END AS 档位 FROM vouchers LIMIT 10;" },
-      { d: '简单型 CASE（等值匹配）', s: "SELECT vid, direction, CASE direction WHEN '借' THEN amount ELSE -amount END AS 净额 FROM vouchers LIMIT 10;" },
-      { d: 'CASE 配合分组（GROUP BY 里要重写完整表达式，不能用别名）', s: "SELECT CASE WHEN amount >= 100000 THEN '大额' ELSE '其他' END AS 档位, COUNT(*) AS 笔数 FROM vouchers GROUP BY CASE WHEN amount >= 100000 THEN '大额' ELSE '其他' END;" },
-    ]},
-    { cat: '子查询 Subquery', items: [
-      { d: '标量子查询（返回一个值，内层先跑）', s: 'SELECT vid, amount FROM vouchers WHERE amount > (SELECT AVG(amount) FROM vouchers) LIMIT 10;' },
-      { d: 'IN 子查询（返回一列值）', s: "SELECT vid, dept_id FROM vouchers WHERE dept_id IN (SELECT dept_id FROM departments WHERE region = '华东') LIMIT 10;" },
-      { d: 'FROM 派生表（必须起别名）', s: 'SELECT t.dept_id, t.cnt FROM (SELECT dept_id, COUNT(*) AS cnt FROM vouchers GROUP BY dept_id) t WHERE t.cnt > 100;' },
-    ]},
-    { cat: '窗口函数 Window Function', items: [
-      { d: 'ROW_NUMBER 分组内编号（行数不变）', s: 'SELECT vid, dept_id, amount, ROW_NUMBER() OVER (PARTITION BY dept_id ORDER BY amount DESC) AS rn FROM vouchers LIMIT 10;' },
-      { d: 'RANK / DENSE_RANK 排名', s: 'SELECT vid, dept_id, amount, RANK() OVER (PARTITION BY dept_id ORDER BY amount DESC) AS rk FROM vouchers LIMIT 10;' },
-      { d: 'SUM OVER 分组内累计求和', s: 'SELECT vid, dept_id, amount, SUM(amount) OVER (PARTITION BY dept_id ORDER BY amount DESC) AS 累计 FROM vouchers LIMIT 10;' },
-      { d: '窗口 + 子查询：取每组前 N 名', s: 'SELECT t.dept_id, t.vid, t.amount FROM (SELECT dept_id, vid, amount, ROW_NUMBER() OVER (PARTITION BY dept_id ORDER BY amount DESC) AS rn FROM vouchers) t WHERE t.rn <= 3;' },
-    ]},
-    { cat: '常用函数', items: [
-      { d: 'YEAR / MONTH 提取年月', s: "SELECT YEAR(date) AS 年, MONTH(date) AS 月, SUM(amount) AS 收入 FROM vouchers WHERE acc_code = '6001' GROUP BY YEAR(date), MONTH(date);" },
-      { d: 'ROUND 四舍五入', s: 'SELECT ROUND(AVG(amount), 2) AS 平均金额 FROM vouchers;' },
-      { d: 'COALESCE 处理空值', s: "SELECT vid, COALESCE(cust_id, '无客户') AS 客户 FROM vouchers LIMIT 10;" },
-      { d: 'UPPER / LOWER 大小写', s: 'SELECT UPPER(acc_name) FROM accounts LIMIT 5;' },
-      { d: 'CONCAT 拼接', s: "SELECT CONCAT(dept_name, '-', region) AS 部门地区 FROM departments;" },
-    ]},
-    { cat: '数据操作 DML', items: [
-      { d: 'INSERT 插入一行', s: "INSERT INTO vouchers (vid, date, dept_id, acc_code, direction, amount, cust_id, summary) VALUES (9999, '2025-06-15', 1, '6601', '借', 8888, NULL, '练习插入');" },
-      { d: 'INSERT 多行', s: "INSERT INTO vouchers (vid, date, dept_id, acc_code, direction, amount, cust_id, summary) VALUES (9001, '2025-07-01', 2, '6602', '借', 1000, NULL, 'A'), (9002, '2025-07-02', 2, '6602', '借', 2000, NULL, 'B');" },
-      { d: 'UPDATE 更新', s: "UPDATE vouchers SET amount = 9999 WHERE vid = 9999;" },
-      { d: 'DELETE 删除', s: 'DELETE FROM vouchers WHERE vid = 9999;' },
-    ]},
-    { cat: '表定义 DDL', items: [
-      { d: 'CREATE TABLE 建表', s: 'CREATE TABLE my_practice (id INT, 项目 TEXT, 金额 NUMERIC);' },
-      { d: 'DROP TABLE 删表', s: 'DROP TABLE my_practice;' },
-      { d: '常见数据类型', s: '-- INT 整数 / NUMERIC 数值 / TEXT 文本 / DATE 日期 / VARCHAR(50) 变长文本' },
-    ]},
-    { cat: '本练习台的限制（已知边界）', items: [
-      { d: '不支持相关子查询', s: '-- 子查询内部不能引用外层表的列；独立子查询正常可用' },
-      { d: '不支持 CTE（WITH）', s: '-- WITH 语法暂不支持，请改用 FROM (SELECT ...) t 派生表' },
-      { d: '不支持 FULL JOIN', s: '-- INNER / LEFT / RIGHT JOIN 已支持；FULL JOIN 不支持' },
-      { d: '建议练习路径', s: '-- SELECT+WHERE → GROUP BY/HAVING → JOIN → CASE WHEN → 子查询 → 窗口函数' },
-    ]},
-  ];
-
-  function renderRef() {
-    const box = $('#refList');
-    box.innerHTML = '';
-    REF.forEach((group, gi) => {
-      const sec = document.createElement('div');
-      sec.className = 'ref-group';
-      const head = document.createElement('button');
-      head.className = 'ref-head';
-      head.innerHTML = `<span>${esc(group.cat)}</span><span class="arrow">▾</span>`;
-      const body = document.createElement('div');
-      body.className = 'ref-body';
-      group.items.forEach((it) => {
-        const item = document.createElement('div');
-        item.className = 'ref-item';
-        item.innerHTML = `<div class="ref-desc">${esc(it.d)}</div>` +
-          `<pre class="ref-sql" title="点击载入到沙盒">${esc(it.s)}</pre>` +
-          `<button class="btn-mini" data-sql="${esc(it.s)}">载入沙盒</button>`;
-        body.appendChild(item);
-      });
-      head.addEventListener('click', () => {
-        sec.classList.toggle('open');
-      });
-      head.addEventListener('click', () => { /* toggle arrow */ });
-      sec.appendChild(head); sec.appendChild(body);
-      box.appendChild(sec);
-    });
-    // 默认展开前两组
-    $all('.ref-group', box).slice(0, 2).forEach((g) => g.classList.add('open'));
-    $all('.ref-sql', box).forEach((pre) => {
-      pre.addEventListener('click', () => {
-        const sql = pre.textContent.replace(/^--.*\n?/gm, '').trim();
-        if (!sql) return;
-        $('#sqlInput').value = sql;
-        switchTab('sandbox');
-        runSQLcmd();
-      });
-    });
-    $all('button.btn-mini[data-sql]', box).forEach((b) => {
-      b.addEventListener('click', () => {
-        const sql = b.dataset.sql.replace(/^--.*\n?/gm, '').trim();
-        if (!sql) return;
-        $('#sqlInput').value = sql;
-        switchTab('sandbox');
-        runSQLcmd();
-      });
-    });
-  }
-
-  /* ---------- Tab 切换 ---------- */
-  function switchTab(name) {
-    $all('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
-    $all('.tab-pane').forEach((p) => p.classList.toggle('active', p.id === 'pane-' + name));
-  }
-
-  /* ---------- 导入用户数据（xlsx / csv） ---------- */
-  function decodeXmlEnt(s) {
-    return String(s).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&apos;/g, "'");
-  }
-  function colLetterToIdx(s) {
-    let n = 0;
-    for (let i = 0; i < s.length; i++) n = n * 26 + (s.charCodeAt(i) - 64);
-    return n - 1;
-  }
-  function parseCsvText(text) {
-    const first = text.split(/\r?\n/)[0] || '';
-    const delim = first.split('\t').length > first.split(',').length ? '\t' : ',';
-    const rows = [];
-    let row = [], cur = '', inQ = false;
-    for (let i = 0; i < text.length; i++) {
-      const c = text[i];
-      if (inQ) {
-        if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
-        else cur += c;
-      } else if (c === '"') inQ = true;
-      else if (c === delim) { row.push(cur); cur = ''; }
-      else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
-      else if (c !== '\r') cur += c;
-    }
-    if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
-    return rows;
-  }
-  async function parseXlsxBuffer(buf) {
-    if (typeof DecompressionStream === 'undefined') throw new Error('当前浏览器不支持内置解压，请在 Excel 里用"另存为 CSV"后再导入');
-    const data = new Uint8Array(buf);
-    const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
-    let eocd = -1;
-    const min = Math.max(0, data.length - 65558);
-    for (let i = data.length - 22; i >= min; i--) {
-      if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
-    }
-    if (eocd < 0) throw new Error('不是有效的 xlsx 文件');
-    const cdCount = dv.getUint16(eocd + 10, true);
-    let ptr = dv.getUint32(eocd + 16, true);
-    const entries = {};
-    for (let i = 0; i < cdCount; i++) {
-      if (ptr + 46 > data.length || dv.getUint32(ptr, true) !== 0x02014b50) break;
-      const method = dv.getUint16(ptr + 10, true);
-      const compSize = dv.getUint32(ptr + 20, true);
-      const nameLen = dv.getUint16(ptr + 28, true);
-      const extraLen = dv.getUint16(ptr + 30, true);
-      const commentLen = dv.getUint16(ptr + 32, true);
-      const localOffset = dv.getUint32(ptr + 42, true);
-      let name = '';
-      for (let j = 0; j < nameLen; j++) name += String.fromCharCode(data[ptr + 46 + j]);
-      entries[name] = { method, compSize, localOffset };
-      ptr += 46 + nameLen + extraLen + commentLen;
-    }
-    async function readEntry(name) {
-      const e = entries[name];
-      if (!e) return null;
-      const nameLen = dv.getUint16(e.localOffset + 26, true);
-      const extraLen = dv.getUint16(e.localOffset + 28, true);
-      const start = e.localOffset + 30 + nameLen + extraLen;
-      const chunk = data.subarray(start, start + e.compSize);
-      if (e.method === 0) return new TextDecoder('utf-8').decode(chunk);
-      const ds = new DecompressionStream('deflate-raw');
-      const stream = new Blob([chunk]).stream().pipeThrough(ds);
-      const out = await new Response(stream).arrayBuffer();
-      return new TextDecoder('utf-8').decode(out);
-    }
-    const shared = [];
-    const ssXml = await readEntry('xl/sharedStrings.xml');
-    if (ssXml) {
-      const re = /<si>([\s\S]*?)<\/si>/g; let m;
-      while ((m = re.exec(ssXml))) {
-        let s = '';
-        const tre = /<t[^>]*>([\s\S]*?)<\/t>/g; let tm;
-        while ((tm = tre.exec(m[1]))) s += decodeXmlEnt(tm[1]);
-        shared.push(s);
-      }
-    }
-    let sheetXml = await readEntry('xl/worksheets/sheet1.xml');
-    if (!sheetXml) {
-      const k = Object.keys(entries).find((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n));
-      if (k) sheetXml = await readEntry(k);
-    }
-    if (!sheetXml) throw new Error('未找到工作表内容');
-    const rows = [];
-    const rowRe = /<row[^>]*>([\s\S]*?)<\/row>|<row[^>]*\/>/g; let rm;
-    while ((rm = rowRe.exec(sheetXml))) {
-      const rowXml = rm[0];
-      const cells = [];
-      const cRe = /<c\s([^>]*?)>([\s\S]*?)<\/c>|<c\s([^>]*?)\/>/g; let cm;
-      while ((cm = cRe.exec(rowXml))) {
-        const attrs = cm[1] || cm[3] || '';
-        const inner = cm[2] || '';
-        const rM = /r="([A-Z]+)/.exec(attrs);
-        const tM = /t="([^"]+)"/.exec(attrs);
-        const vM = /<v[^>]*>([\s\S]*?)<\/v>/.exec(inner);
-        const isM = /<is>([\s\S]*?)<\/is>/.exec(inner);
-        const idx = rM ? colLetterToIdx(rM[1]) : cells.length;
-        let val = '';
-        if (tM && tM[1] === 'inlineStr' && isM) {
-          let s = '';
-          const tre = /<t[^>]*>([\s\S]*?)<\/t>/g; let tm;
-          while ((tm = tre.exec(isM[1]))) s += decodeXmlEnt(tm[1]);
-          val = s;
-        } else if (vM) {
-          const raw = decodeXmlEnt(vM[1]);
-          val = (tM && tM[1] === 's') ? (shared[parseInt(raw, 10)] ?? '') : raw;
-        }
-        cells[idx] = val;
-      }
-      for (let i = 0; i < cells.length; i++) if (cells[i] === undefined) cells[i] = '';
-      rows.push(cells);
-    }
-    return rows;
-  }
-  function rowsToTable(rows) {
-    if (!rows.length) throw new Error('文件是空的');
-    const header = rows[0].map((h, i) => {
-      const s = String(h == null ? '' : h).trim();
-      return s === '' ? 'col' + (i + 1) : s;
-    });
-    const out = [];
-    for (let i = 1; i < rows.length; i++) {
-      const src = rows[i] || [];
-      if (src.every((v) => v === '' || v == null)) continue;
-      const o = {};
-      header.forEach((h, j) => {
-        let v = src[j];
-        if (typeof v === 'string') {
-          const t = v.trim();
-          v = (t !== '' && /^-?\d+(\.\d+)?$/.test(t)) ? Number(t) : t;
-        }
-        o[h] = v;
-      });
-      out.push(o);
-    }
-    return { cols: header, rows: out };
-  }
-  function tableNameFrom(fname) {
-    let n = fname.replace(/\.(xlsx|csv|tsv|txt)$/i, '').trim();
-    n = n.replace(/[^\w一-龥]/g, '_');
-    if (!n) n = 'my_data';
-    if (/^\d/.test(n)) n = 'my_' + n;
-    return n;
-  }
-  async function handleImportFile(ev) {
-    const file = ev.target.files && ev.target.files[0];
-    if (!file) return;
-    ev.target.value = '';
-    const hint = $('#importHint');
-    hint.style.display = 'block';
-    hint.textContent = '正在解析 ' + file.name + ' ...';
-    try {
-      let rows;
-      const lower = file.name.toLowerCase();
-      if (lower.endsWith('.csv') || lower.endsWith('.tsv') || lower.endsWith('.txt')) {
-        const buf = await file.arrayBuffer();
-        let text = new TextDecoder('utf-8').decode(buf);
-        if (text.indexOf('\uFFFD') >= 0) {
-          try {
-            const gbk = new TextDecoder('gbk').decode(buf);
-            if (gbk.indexOf('\uFFFD') < 0) text = gbk;
-          } catch (e) { /* 浏览器不支持 GBK 则沿用 UTF-8 结果 */ }
-        }
-        rows = parseCsvText(text.replace(/^﻿/, ''));
-      } else if (lower.endsWith('.xlsx')) {
-        rows = await parseXlsxBuffer(await file.arrayBuffer());
-      } else {
-        throw new Error('仅支持 .xlsx / .csv 文件（Excel 可用"另存为 CSV"）');
-      }
-      const t = rowsToTable(rows);
-      if (!t.cols.length) throw new Error('未能识别表头，请确认第一行是列名');
-      let name = tableNameFrom(file.name);
-      if (DB[name]) { let i = 2; while (DB[name + '_' + i]) i++; name = name + '_' + i; }
-      DB[name] = { cols: t.cols, rows: t.rows };
-      saveDB();
-      renderTableList();
-      showTable(name);
-      hint.textContent = '已导入表 ' + name + '（' + t.rows.length + ' 行 x ' + t.cols.length + ' 列），可在 SQL 沙盒里直接查询。';
-      toast('导入成功：' + name);
-    } catch (e) {
-      hint.textContent = '导入失败：' + e.message;
-      toast('导入失败');
-    }
-  }
-
-  /* ---------- 初始化 ---------- */
-  function init() {
-    DB = loadDB() || buildDB();
-    saveDB();
-
-    renderTasks();
-    renderTableList();
-    showTable(currentTable);
-    renderSaved();
-    renderRef();
-
-    // 示例下拉
-    const exSel = $('#exampleSel');
-    EXAMPLES.forEach((e, i) => {
-      const o = document.createElement('option');
-      o.value = i; o.textContent = e.label;
-      exSel.appendChild(o);
-    });
-    exSel.addEventListener('change', () => {
-      if (exSel.value === '') return;
-      $('#sqlInput').value = EXAMPLES[+exSel.value].sql;
-      switchTab('sandbox');
-      runSQLcmd();
-      exSel.value = '';
-    });
-
-    // 按钮事件
-    $('#runBtn').addEventListener('click', runSQLcmd);
-    $('#clearBtn').addEventListener('click', () => { $('#sqlInput').value = ''; $('#resultArea').innerHTML = '<div class="hint">结果将显示在这里。</div>'; $('#sqlInput').focus(); });
-    $('#csvBtn').addEventListener('click', exportCSV);
-    $('#saveQBtn').addEventListener('click', saveCurrentQuery);
-    $('#backupBtn').addEventListener('click', exportBackup);
-    $('#importBtn').addEventListener('click', importBackup);
-    $('#resetBtn').addEventListener('click', () => {
-      if (confirm('确定要重置为初始虚拟财务数据吗？你做的 INSERT/UPDATE/DELETE 与自建表将被清空。')) resetDB();
-    });
-    $('#refreshDataBtn').addEventListener('click', () => { renderTableList(); showTable(currentTable); toast('已刷新数据视图'); });
-    $('#importDataBtn').addEventListener('click', () => $('#importFile').click());
-    $('#importFile').addEventListener('change', handleImportFile);
-
-    $all('.tab-btn').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
-
-    // 快捷键 Ctrl/Cmd + Enter 运行
-    $('#sqlInput').addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runSQLcmd(); }
-    });
-
-    // 预置一条欢迎查询
-    $('#sqlInput').value = "SELECT d.dept_name AS 部门, SUM(v.amount) AS 销售费用 FROM vouchers v JOIN departments d ON v.dept_id = d.dept_id WHERE v.acc_code = '6601' GROUP BY d.dept_name ORDER BY 销售费用 DESC;";
-  }
-
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-  else init();
-})();
+boot();
 </script>
 </body>
 </html>
