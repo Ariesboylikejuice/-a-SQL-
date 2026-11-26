@@ -113,6 +113,48 @@
   }
   .filter input{accent-color:var(--ok);cursor:pointer}
 
+  .ansbtn{
+    font-size:12px;padding:3px 10px;border-radius:6px;border:1px solid var(--line);
+    color:var(--tx2);background:var(--panel2);margin-left:auto;
+  }
+  .ansbtn:hover{border-color:var(--btn2-bd);color:var(--tx)}
+
+  .ans{
+    margin-top:12px;border:1px solid var(--line);border-radius:8px;
+    background:var(--panel2);overflow:hidden;
+  }
+  .ans summary{
+    cursor:pointer;padding:8px 12px;font-size:12.5px;color:var(--tx2);
+    user-select:none;list-style:none;
+  }
+  .ans summary::-webkit-details-marker{display:none}
+  .ans summary::before{content:'▸ ';color:var(--tx3)}
+  .ans[open] summary::before{content:'▾ '}
+  .ans summary:hover{color:var(--tx)}
+  .ans[open] summary{border-bottom:1px solid var(--line);color:var(--tx)}
+  .ans summary .hint{color:var(--tx3);font-size:11.5px;margin-left:6px}
+  .ansbody{padding:12px 14px}
+  .anslabel{
+    font-size:10.5px;letter-spacing:.6px;color:var(--tx3);margin-bottom:6px;
+    text-transform:uppercase;font-weight:500;
+  }
+  .anslabel:not(:first-child){margin-top:14px}
+  .ans pre{
+    margin:0 0 10px;padding:11px 13px;background:var(--code-bg);
+    border:1px solid var(--line);border-radius:6px;
+    font-family:var(--mono);font-size:12px;line-height:1.62;
+    color:var(--code-tx);overflow-x:auto;white-space:pre;
+  }
+  .ans pre:last-child{margin-bottom:0}
+  .exp{font-size:13px;line-height:1.8;color:var(--td-tx);margin-top:16px;
+       padding-top:14px;border-top:1px dashed var(--line)}
+  .exp b{color:var(--tx);font-weight:600}
+  .exp pre{
+    margin:10px 0;padding:10px 12px;background:var(--code-bg);border:1px solid var(--line);
+    border-radius:6px;font-family:var(--mono);font-size:11.5px;line-height:1.6;
+    color:var(--code-tx);overflow-x:auto;white-space:pre;
+  }
+
   #themeBtn{
     margin-left:10px;width:29px;height:29px;flex:none;border:1px solid var(--btn2-bd);
     border-radius:8px;background:var(--panel2);color:var(--tx2);font-size:14px;
@@ -156,6 +198,7 @@
     <div class="bar"><i id="bar"></i></div>
     <span class="pnum" id="pnum">0 / 45</span>
     <label class="filter"><input type="checkbox" id="onlyTodo"> 只看未完成</label>
+    <button class="ansbtn" id="toggleAll">展开全部答案</button>
   </div>
   <div class="chips" id="chips"></div>
 </header>
@@ -163,6 +206,8 @@
 <main id="list"></main>
 
 <script src="src/plan-data.js"></script>
+<script src="src/tasks.js"></script>
+<script src="src/plan-answers.js"></script>
 <script>
 const KEY = 'sql-plan-done';
 let done = [];
@@ -204,6 +249,34 @@ function toggle(d) {
   else done.push(d);
   try { localStorage.setItem(KEY, JSON.stringify(done)); } catch (e) {}
   render();
+}
+
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+const openAns = new Set();
+
+function ansBlock(d) {
+  const a = (typeof PLAN_ANS !== 'undefined') ? PLAN_ANS[d] : null;
+  if (!a) return '';
+  let sqlHtml = '';
+  if (a.task && typeof TASKS !== 'undefined') {
+    const t = TASKS.find((x) => x.id === a.task);
+    if (t) {
+      sqlHtml = '<div class="anslabel">' + a.task + ' · ' + esc(t.title) + '</div>' +
+                '<pre>' + esc(t.answer) + '</pre>';
+    }
+  } else if (a.ans && a.ans.length) {
+    sqlHtml = '<div class="anslabel">参考 SQL</div>' +
+      a.ans.map((x) => '<pre>' + esc(x) + '</pre>').join('');
+  }
+  const expHtml = a.exp ? '<div class="exp">' + a.exp + '</div>' : '';
+  const title = sqlHtml ? '参考答案 + 解析' : '解析 · 自查清单';
+  const hint = sqlHtml ? '先自己写，卡住再展开' : '';
+  return '<details class="ans" data-d="' + d + '"' + (openAns.has(d) ? ' open' : '') + '>' +
+    '<summary>' + title + '<span class="hint">— ' + hint + '</span></summary>' +
+    '<div class="ansbody">' + sqlHtml + expHtml + '</div></details>';
 }
 
 function taskLink(text) {
@@ -250,6 +323,7 @@ function render() {
         '<div class="row todo"><span class="tag">做</span><p>' + x.todo + '</p></div>' +
         '<div class="row check"><span class="tag">验收</span><p>' + x.check + '</p></div>' +
         taskLink(x.todo + ' ' + x.check + ' ' + x.t) +
+        ansBlock(x.d) +
         '</div></div>';
     });
     html += '</div>';
@@ -258,7 +332,35 @@ function render() {
   document.querySelectorAll('.dot').forEach((b) => {
     b.onclick = () => toggle(+b.dataset.d);
   });
+  document.querySelectorAll('details.ans').forEach((el) => {
+    el.addEventListener('toggle', () => {
+      if (el.open) openAns.add(+el.dataset.d);
+      else openAns.delete(+el.dataset.d);
+    });
+  });
+  syncToggleAll();
 }
+
+function syncToggleAll() {
+  const btn = document.getElementById('toggleAll');
+  if (!btn) return;
+  const all = document.querySelectorAll('details.ans');
+  const opened = document.querySelectorAll('details.ans[open]');
+  const openNow = all.length > 0 && all.length === opened.length;
+  btn.textContent = openNow ? '收起全部答案' : '展开全部答案';
+  btn.dataset.all = openNow ? '1' : '0';
+}
+
+document.getElementById('toggleAll').onclick = () => {
+  const btn = document.getElementById('toggleAll');
+  const expand = btn.dataset.all !== '1';
+  document.querySelectorAll('details.ans').forEach((el) => {
+    el.open = expand;
+    if (expand) openAns.add(+el.dataset.d);
+    else openAns.delete(+el.dataset.d);
+  });
+  syncToggleAll();
+};
 
 document.getElementById('onlyTodo').onchange = render;
 render();
