@@ -7,11 +7,45 @@
 <style>
   :root{
     --bg:#0e1116; --panel:#151a21; --panel2:#1b222b; --line:#252d38;
-    --tx:#e4e8ee; --tx2:#9aa5b4; --tx3:#6b7686;
+    --tx:#e4e8ee; --tx2:#9aa5b4; --tx3:#7c8794;
     --accent:#3d9df6; --ok:#3ec98a; --warn:#e5a23c; --err:#f06a6a;
     --mono:'SF Mono','JetBrains Mono',Consolas,'Courier New',monospace;
     --radius:10px;
+
+    /* 语义色：代码区 / 表格 */
+    --code-bg:#0b0e13; --code-tx:#d8e2ef; --code-hl:#9ecbf5;
+    --td-tx:#cfd8e3; --row-line:#1a2029; --tr-hover:#131920;
+    --btn2:#222a35; --btn2-bd:#3a4654;
+    --accent-tx:#06121f; --accent-hover:#57adfb;
+    /* 状态文字 */
+    --ok-tx:#8ee9bb; --err-tx:#f4a3a3; --info-tx:#a7cdf7; --warn-tx:#e8c78d;
+    --ok-bg:rgba(62,201,138,.10); --ok-bd:rgba(62,201,138,.30);
+    --err-bg:rgba(240,106,106,.09); --err-bd:rgba(240,106,106,.30);
+    --info-bg:rgba(61,157,246,.08); --info-bd:rgba(61,157,246,.28);
+    --warn-bg:rgba(229,162,60,.08); --warn-bd:rgba(229,162,60,.25);
+    --hl-bd:#2a3a4d; --accent-ink:#3d9df6;
+    --scrim:rgba(0,0,0,.35);
   }
+  /* 亮色主题 */
+  html[data-theme="light"]{
+    --bg:#f4f6f9; --panel:#ffffff; --panel2:#eef2f7; --line:#dbe2ea;
+    --tx:#1a2230; --tx2:#54606f; --tx3:#64707f;
+    --accent:#1a73e8; --ok:#159a67; --warn:#b8790c; --err:#d33b3b;
+    --accent-ink:#1656a8;
+
+    --code-bg:#fbfcfe; --code-tx:#25303d; --code-hl:#1a5fae;
+    --td-tx:#2b3644; --row-line:#edf1f6; --tr-hover:#f4f8fd;
+    --btn2:#eef2f7; --btn2-bd:#bcc7d4;
+    --accent-tx:#ffffff; --accent-hover:#1668d6;
+    --ok-tx:#0b7248; --err-tx:#a82424; --info-tx:#12508f; --warn-tx:#7d5304;
+    --ok-bg:#e8f8f0; --ok-bd:#b3e3cb;
+    --err-bg:#fdeceb; --err-bd:#f3c0bd;
+    --info-bg:#eaf2fd; --info-bd:#c3dbf8;
+    --warn-bg:#fdf6e8; --warn-bd:#efdcb0;
+    --hl-bd:#c6d9f2;
+    --scrim:rgba(20,30,45,.12);
+  }
+  html,body{transition:background .18s ease,color .18s ease}
   *{box-sizing:border-box}
   html,body{height:100%}
   body{
@@ -60,7 +94,7 @@
     border:1px solid var(--line);display:flex;align-items:center;justify-content:center;
     font-size:9px;color:var(--ok);
   }
-  .nav-item.done .dot{background:rgba(62,201,138,.14);border-color:rgba(62,201,138,.5)}
+  .nav-item.done .dot{background:var(--ok-bg);border-color:var(--ok-bd)}
   .nav-item .id{color:var(--tx3);font-family:var(--mono);font-size:11px;flex:none;margin-top:2px}
   .nav-item .tt{flex:1}
 
@@ -79,14 +113,14 @@
   .cols{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
   .cols code{
     font-family:var(--mono);font-size:12px;padding:2px 8px;border-radius:5px;
-    background:var(--panel2);border:1px solid var(--line);color:var(--accent);
+    background:var(--panel2);border:1px solid var(--line);color:var(--accent-ink);
   }
   details.hint{margin-top:14px;font-size:13px;color:var(--tx2)}
   details.hint summary{cursor:pointer;color:var(--tx3);font-size:12px;user-select:none}
   details.hint p{margin:8px 0 0;line-height:1.75}
 
   .editor{
-    background:#0b0e13;border:1px solid var(--line);border-radius:var(--radius);
+    background:var(--code-bg);border:1px solid var(--line);border-radius:var(--radius);
     overflow:hidden;margin-bottom:12px;
   }
   .editor .bar2{
@@ -96,16 +130,16 @@
   .editor .bar2 .fname{font-family:var(--mono);font-size:11.5px;color:var(--tx3)}
   .editor textarea{
     display:block;width:100%;height:150px;resize:vertical;border:none;outline:none;
-    background:transparent;color:#d8e2ef;font-family:var(--mono);font-size:13px;
+    background:transparent;color:var(--code-tx);font-family:var(--mono);font-size:13px;
     line-height:1.7;padding:12px 14px;tab-size:2;
   }
   .btn{
     padding:7px 15px;border-radius:7px;font-size:13px;border:1px solid var(--line);
     background:var(--panel2);color:var(--tx);transition:.12s;
   }
-  .btn:hover{border-color:#3a4654;background:#222a35}
-  .btn.primary{background:var(--accent);border-color:var(--accent);color:#06121f;font-weight:600}
-  .btn.primary:hover{background:#57adfb}
+  .btn:hover{border-color:var(--btn2-bd);background:var(--btn2)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-tx);font-weight:600}
+  .btn.primary:hover{background:var(--accent-hover)}
   .btn:disabled{opacity:.45;cursor:not-allowed}
   .actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
   .actions .kbd{margin-left:auto;font-size:11.5px;color:var(--tx3);font-family:var(--mono)}
@@ -113,18 +147,18 @@
   .msg{padding:11px 15px;border-radius:8px;font-size:13px;margin-bottom:14px;line-height:1.65;
        display:none;white-space:pre-wrap}
   .msg.show{display:block}
-  .msg.ok{background:rgba(62,201,138,.1);border:1px solid rgba(62,201,138,.3);color:#8ee9bb}
-  .msg.err{background:rgba(240,106,106,.09);border:1px solid rgba(240,106,106,.3);color:#f4a3a3}
-  .msg.info{background:rgba(61,157,246,.08);border:1px solid rgba(61,157,246,.28);color:#a7cdf7}
+  .msg.ok{background:var(--ok-bg);border:1px solid var(--ok-bd);color:var(--ok-tx)}
+  .msg.err{background:var(--err-bg);border:1px solid var(--err-bd);color:var(--err-tx)}
+  .msg.info{background:var(--info-bg);border:1px solid var(--info-bd);color:var(--info-tx)}
 
-  .tblwrap{overflow:auto;max-height:440px;border:1px solid var(--line);border-radius:8px;background:#0b0e13}
+  .tblwrap{overflow:auto;max-height:440px;border:1px solid var(--line);border-radius:8px;background:var(--code-bg)}
   table{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12.5px}
   th{
     position:sticky;top:0;background:var(--panel2);text-align:left;padding:8px 12px;
     font-weight:500;color:var(--tx2);border-bottom:1px solid var(--line);white-space:nowrap;
   }
-  td{padding:6px 12px;border-bottom:1px solid #1a2029;white-space:nowrap;color:#cfd8e3}
-  tr:hover td{background:#131920}
+  td{padding:6px 12px;border-bottom:1px solid var(--row-line);white-space:nowrap;color:var(--td-tx)}
+  tr:hover td{background:var(--tr-hover)}
   td.num{text-align:right}
   .null{color:var(--tx3);font-style:italic}
   .tblmeta{font-size:12px;color:var(--tx3);margin:8px 0 0}
@@ -138,21 +172,48 @@
   }
   .tbl-card header em{font-style:normal;font-family:inherit;font-size:11.5px;color:var(--tx3)}
   .tbl-card table{font-size:12.5px}
-  .tbl-card td{border-bottom:1px solid #1a2029;white-space:normal}
-  .tbl-card td:first-child{font-family:var(--mono);color:var(--accent);width:130px}
+  .tbl-card td{border-bottom:1px solid var(--row-line);white-space:normal}
+  .tbl-card td:first-child{font-family:var(--mono);color:var(--accent-ink);width:130px}
   .tbl-card td:nth-child(2){color:var(--tx3);width:80px;font-family:var(--mono);font-size:11.5px}
   .tipbox{
-    background:rgba(229,162,60,.08);border:1px solid rgba(229,162,60,.25);border-radius:8px;
-    padding:12px 16px;font-size:13px;color:#e8c78d;line-height:1.75;margin-bottom:14px;
+    background:var(--warn-bg);border:1px solid var(--warn-bd);border-radius:8px;
+    padding:12px 16px;font-size:13px;color:var(--warn-tx);line-height:1.75;margin-bottom:14px;
   }
   .hidden{display:none!important}
+
+  .planlink{padding:6px 12px;border-radius:6px;font-size:13px;color:var(--accent);
+            text-decoration:none;white-space:nowrap}
+  .planlink:hover{background:var(--panel2)}
+
+  #themeBtn{
+    width:31px;height:31px;flex:none;margin-left:12px;border:1px solid var(--btn2-bd);
+    border-radius:8px;background:var(--panel2);color:var(--tx2);font-size:14.5px;
+    display:flex;align-items:center;justify-content:center;line-height:1;
+    transition:.15s;user-select:none;
+  }
+  #themeBtn svg{display:none;width:15px;height:15px;pointer-events:none}
+  html[data-theme="light"] #themeBtn .ic-moon{display:block}
+  html:not([data-theme="light"]) #themeBtn .ic-sun{display:block}
+  #themeBtn:hover{border-color:var(--btn2-bd);color:var(--tx);transform:rotate(-12deg)}
 
   @media(max-width:860px){
     aside{width:100%;max-height:180px;border-right:none;border-bottom:1px solid var(--line)}
     main{flex-direction:column}
     section{padding:16px}
+    .brand span{display:none}
+    #themeBtn{margin-left:8px}
   }
 </style>
+<script>
+/* 主题：尽早应用，避免刷新时先闪一下暗色；?theme=light|dark 可强制指定 */
+(function () {
+  try {
+    var q = (location.search.match(/[?&]theme=(light|dark)/) || [])[1];
+    var t = q || localStorage.getItem('sqllab-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  } catch (e) {}
+})();
+</script>
 </head>
 <body>
 
@@ -167,11 +228,13 @@
     <div class="tabs">
       <button id="tabWork" class="on">练习</button>
       <button id="tabDict">数据字典</button>
+      <a href="plan.html" class="planlink">45 天计划</a>
     </div>
     <div class="stats">
       <div>销售明细 <b id="sSales">-</b> 行</div>
       <div>完成 <b id="sDone">0</b>/13</div>
     </div>
+    <button id="themeBtn" title="切换深色 / 浅色主题"><svg class="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.1"/><path d="M12 2.6v2.1M12 19.3v2.1M2.6 12h2.1M19.3 12h2.1M5.3 5.3l1.5 1.5M17.2 17.2l1.5 1.5M18.7 5.3l-1.5 1.5M6.8 17.2l-1.5 1.5"/></svg><svg class="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M20.2 14.8A8.4 8.4 0 1 1 9.2 3.8a6.8 6.8 0 0 0 11 11z"/></svg></button>
   </header>
 
   <main id="viewWork">
@@ -292,6 +355,38 @@ function restore() {
   try { store = JSON.parse(localStorage.getItem(LS) || '{}'); } catch (e) { store = {}; }
 }
 
+/* ---------- 主题切换 ---------- */
+const THEME_KEY = 'sqllab-theme';
+function curTheme() {
+  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+}
+function paintThemeBtn() {
+  const btn = document.getElementById('themeBtn');
+  if (!btn) return;
+  const light = curTheme() === 'light';
+  btn.title = light ? '切换到深色主题' : '切换到浅色主题';
+  btn.setAttribute('aria-label', btn.title);
+}
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem(THEME_KEY, t); } catch (e) {}
+  /* 手动切换后清掉 ?theme=，避免刷新时被 URL 覆盖 */
+  try {
+    const u = new URL(location.href);
+    if (u.searchParams.has('theme')) {
+      u.searchParams.delete('theme');
+      history.replaceState(null, '', u.pathname + (u.search || '') + u.hash);
+    }
+  } catch (e) {}
+  paintThemeBtn();
+}
+function initTheme() {
+  const btn = document.getElementById('themeBtn');
+  if (!btn) return;
+  paintThemeBtn();
+  btn.addEventListener('click', () => setTheme(curTheme() === 'light' ? 'dark' : 'light'));
+}
+
 function fmtCell(v) {
   if (v === null || v === undefined) return '<span class="null">NULL</span>';
   if (typeof v === 'number') {
@@ -388,6 +483,7 @@ function openTask(i) {
   document.getElementById('rowInfo').textContent = '';
   renderNav();
   ta.focus();
+  try { history.replaceState(null, '', '#' + t.id); } catch (e) {}
 }
 
 function runSql(sql) {
@@ -466,9 +562,9 @@ function check() {
 function showAnswer() {
   const t = TASKS[curIdx];
   document.getElementById('answerBox').innerHTML =
-    '<div class="card" style="border-color:#2a3a4d">' +
+    '<div class="card" style="border-color:var(--hl-bd)">' +
     '<div class="label" style="margin-top:0">参考答案</div>' +
-    '<pre style="margin:0;font-family:var(--mono);font-size:12.5px;line-height:1.7;color:#a7cdf7;white-space:pre-wrap">' +
+    '<pre style="margin:0;font-family:var(--mono);font-size:12.5px;line-height:1.7;color:var(--info-tx);white-space:pre-wrap">' +
     t.answer.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])) + '</pre></div>';
 }
 
@@ -482,6 +578,7 @@ function renderDict() {
 
 async function boot() {
   restore();
+  initTheme();
   try {
     await bootInner();
   } catch (e) {
@@ -489,7 +586,7 @@ async function boot() {
     document.getElementById('boot').innerHTML =
       '<div style="max-width:520px;text-align:center;line-height:1.8">' +
       '初始化失败：' + (e && e.message ? e.message : e) +
-      '<br><span style="font-size:12px;color:#6b7686">若是网络问题，请确认能访问 cdnjs 或 jsdelivr；' +
+      '<br><span style="font-size:12px;color:var(--tx3)">若是网络问题，请确认能访问 cdnjs 或 jsdelivr；' +
       '若是语法问题，请按 F12 看控制台。</span></div>';
   }
 }
@@ -551,7 +648,9 @@ async function bootInner() {
 
   renderDict();
   renderNav();
-  openTask(0);
+  const h = (location.hash || '').replace('#', '').trim();
+  const startIdx = TASKS.findIndex((t) => t.id === h);
+  openTask(startIdx >= 0 ? startIdx : 0);
   document.getElementById('boot').style.display = 'none';
   document.getElementById('app').classList.remove('hidden');
 }
