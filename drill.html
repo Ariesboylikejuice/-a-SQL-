@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GROUP BY 分组专项 · 8 题</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#151a21; --panel2:#1b222b; --line:#252d38;
+    --tx:#e4e8ee; --tx2:#9aa5b4; --tx3:#7c8794;
+    --accent:#3d9df6; --ok:#3ec98a; --warn:#e5a23c; --err:#f06a6a;
+    --mono:'SF Mono','JetBrains Mono',Consolas,monospace;
+
+    --code-bg:#0b0e13; --code-hl:#9ecbf5; --code-tx:#c8d2de;
+    --td-tx:#c8d2de; --td-tx2:#a8b3c1; --row-line:#1a2029;
+    --btn2:#222a35; --btn2-bd:#3a4654;
+    --learn-bd:#2f3d4f;
+    --ok-bg:rgba(62,201,138,.15); --ok-bd:rgba(62,201,138,.55);
+    --info-bg:rgba(61,157,246,.10); --info-bd:rgba(61,157,246,.35);
+  }
+  html[data-theme="light"]{
+    --bg:#f4f6f9; --panel:#ffffff; --panel2:#eef2f7; --line:#dbe2ea;
+    --tx:#1a2230; --tx2:#54606f; --tx3:#64707f;
+    --accent:#1a73e8; --ok:#159a67; --warn:#b8790c; --err:#d33b3b;
+
+    --code-bg:#f7f9fc; --code-hl:#1a5fae; --code-tx:#2b3644;
+    --td-tx:#2b3644; --td-tx2:#4d5866; --row-line:#edf1f6;
+    --btn2:#eef2f7; --btn2-bd:#bcc7d4;
+    --learn-bd:#c3cedb;
+    --ok-bg:#e0f5ea; --ok-bd:#8fd4b0;
+    --info-bg:#eaf2fd; --info-bd:#c3dbf8;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--bg);color:var(--tx);
+    font:14px/1.7 -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+  code{font-family:var(--mono);font-size:12.5px;background:var(--code-bg);border:1px solid var(--line);
+       padding:1px 6px;border-radius:4px;color:var(--code-hl)}
+
+  header{
+    padding:22px 26px 16px;border-bottom:1px solid var(--line);background:var(--panel);
+    position:sticky;top:0;z-index:10;
+  }
+  .top{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+  h1{margin:0;font-size:17px;font-weight:600;letter-spacing:.2px}
+  .sub{font-size:12.5px;color:var(--tx3)}
+  .top .nav{margin-left:auto;display:flex;gap:14px;align-items:center}
+  .top a{font-size:12.5px;color:var(--accent);text-decoration:none}
+  .top a:hover{text-decoration:underline}
+
+  .prog{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap}
+  .bar{flex:1;height:5px;background:var(--line);border-radius:3px;overflow:hidden;max-width:420px}
+  .bar i{display:block;height:100%;background:var(--ok);border-radius:3px;transition:width .2s}
+  .pnum{font-family:var(--mono);font-size:12.5px;color:var(--tx2)}
+
+  .ansbtn{
+    font-size:12px;padding:3px 10px;border-radius:6px;border:1px solid var(--line);
+    color:var(--tx2);background:var(--panel2);
+  }
+  .ansbtn:hover{border-color:var(--btn2-bd);color:var(--tx)}
+
+  main{max-width:900px;margin:0 auto;padding:10px 26px 90px}
+  .note{
+    margin:18px 0 4px;padding:12px 16px;font-size:13px;line-height:1.75;
+    border:1px solid var(--info-bd);background:var(--info-bg);border-radius:8px;color:var(--td-tx);
+  }
+  .note b{color:var(--tx)}
+
+  .day{
+    display:grid;grid-template-columns:52px 1fr;gap:0 16px;
+    padding:18px 0;border-bottom:1px solid var(--row-line);
+  }
+  .day.done{opacity:.55}
+  .left{display:flex;flex-direction:column;align-items:center;gap:6px;padding-top:2px}
+  .dot{
+    width:26px;height:26px;border-radius:50%;border:1px solid var(--line);flex:none;
+    display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--tx3);
+    transition:.15s;
+  }
+  .dot:hover{border-color:var(--ok);color:var(--ok)}
+  .day.done .dot{background:var(--ok-bg);border-color:var(--ok-bd);color:var(--ok)}
+  .dnum{font-family:var(--mono);font-size:10.5px;color:var(--tx3);letter-spacing:.3px}
+  .day.done .dnum{color:var(--ok)}
+
+  .t{font-size:14.5px;font-weight:600;margin:0 0 3px;letter-spacing:.2px}
+  .min{font-size:11px;color:var(--tx3);font-family:var(--mono);margin-left:8px;font-weight:400}
+  .row{display:grid;grid-template-columns:34px 1fr;gap:8px;margin-top:7px;font-size:13.2px;line-height:1.75}
+  .tag{
+    font-size:10.5px;letter-spacing:.5px;color:var(--tx3);padding-top:3px;
+    border-left:2px solid var(--line);padding-left:7px;
+  }
+  .row.learn .tag{border-left-color:var(--learn-bd)}
+  .row.todo .tag{border-left-color:var(--accent)}
+  .row.check .tag{border-left-color:var(--warn)}
+  .row p{margin:0;color:var(--td-tx)}
+  .row.check p{color:var(--td-tx2)}
+
+  .ans{
+    margin-top:13px;border:1px solid var(--line);border-radius:8px;
+    background:var(--panel2);overflow:hidden;
+  }
+  .ans summary{
+    cursor:pointer;padding:8px 12px;font-size:12.5px;color:var(--tx2);
+    user-select:none;list-style:none;
+  }
+  .ans summary::-webkit-details-marker{display:none}
+  .ans summary::before{content:'▸ ';color:var(--tx3)}
+  .ans[open] summary::before{content:'▾ '}
+  .ans summary:hover{color:var(--tx)}
+  .ans[open] summary{border-bottom:1px solid var(--line);color:var(--tx)}
+  .ans summary .hint{color:var(--tx3);font-size:11.5px;margin-left:6px}
+  .ansbody{padding:12px 14px}
+  .anslabel{
+    font-size:10.5px;letter-spacing:.6px;color:var(--tx3);margin-bottom:6px;
+    text-transform:uppercase;font-weight:500;
+  }
+  .anslabel:not(:first-child){margin-top:14px}
+  .ans pre{
+    margin:0 0 10px;padding:11px 13px;background:var(--code-bg);
+    border:1px solid var(--line);border-radius:6px;
+    font-family:var(--mono);font-size:12px;line-height:1.62;
+    color:var(--code-tx);overflow-x:auto;white-space:pre;
+  }
+  .ans pre:last-child{margin-bottom:0}
+  .exp{font-size:13px;line-height:1.8;color:var(--td-tx);margin-top:16px;
+       padding-top:14px;border-top:1px dashed var(--line)}
+  .exp b{color:var(--tx);font-weight:600}
+  .exp code{color:var(--code-hl)}
+  .exp pre{
+    margin:10px 0;padding:10px 12px;background:var(--code-bg);border:1px solid var(--line);
+    border-radius:6px;font-family:var(--mono);font-size:11.5px;line-height:1.6;
+    color:var(--code-tx);overflow-x:auto;white-space:pre;
+  }
+
+  #themeBtn{
+    margin-left:6px;width:29px;height:29px;flex:none;border:1px solid var(--btn2-bd);
+    border-radius:8px;background:var(--panel2);color:var(--tx2);font-size:14px;
+    display:inline-flex;align-items:center;justify-content:center;line-height:1;
+    transition:.15s;user-select:none;vertical-align:middle;
+  }
+  #themeBtn svg{display:none;width:15px;height:15px;pointer-events:none}
+  html[data-theme="light"] #themeBtn .ic-moon{display:block}
+  html:not([data-theme="light"]) #themeBtn .ic-sun{display:block}
+  #themeBtn:hover{border-color:var(--btn2-bd);color:var(--tx);transform:rotate(-12deg)}
+
+  @media(max-width:700px){
+    header{padding:16px}
+    main{padding:6px 16px 60px}
+    .day{grid-template-columns:40px 1fr;gap:0 10px}
+    .sub{display:none}
+  }
+</style>
+<script>
+/* 主题：尽早应用，避免刷新时先闪一下暗色；?theme=light|dark 可强制指定 */
+(function () {
+  try {
+    var q = (location.search.match(/[?&]theme=(light|dark)/) || [])[1];
+    var t = q || localStorage.getItem('sqllab-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  } catch (e) {}
+})();
+</script>
+</head>
+<body>
+
+<header>
+  <div class="top">
+    <h1>GROUP BY 分组专项 · 8 题</h1>
+    <span class="sub">配合 Day 06 · 每题 15-30 分钟</span>
+    <span class="nav">
+      <a href="plan.html">← 回 45 天计划</a>
+      <a href="index.html">练习台</a>
+      <button id="themeBtn" title="切换深色 / 浅色主题"><svg class="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.1"/><path d="M12 2.6v2.1M12 19.3v2.1M2.6 12h2.1M19.3 12h2.1M5.3 5.3l1.5 1.5M17.2 17.2l1.5 1.5M18.7 5.3l-1.5 1.5M6.8 17.2l-1.5 1.5"/></svg><svg class="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M20.2 14.8A8.4 8.4 0 1 1 9.2 3.8a6.8 6.8 0 0 0 11 11z"/></svg></button>
+    </span>
+  </div>
+  <div class="prog">
+    <div class="bar"><i id="bar"></i></div>
+    <span class="pnum" id="pnum">0 / 8</span>
+    <button class="ansbtn" id="toggleAll">展开全部答案</button>
+  </div>
+</header>
+
+<main id="list"></main>
+
+<script src="src/drill-groupby.js"></script>
+<script>
+const KEY = 'sql-drill-gb-done';
+let done = [];
+try { done = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { done = []; }
+
+/* ---------- 主题 ---------- */
+const THEME_KEY = 'sqllab-theme';
+function curTheme() { return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'; }
+function paintThemeBtn() {
+  const btn = document.getElementById('themeBtn');
+  if (!btn) return;
+  const light = curTheme() === 'light';
+  btn.title = light ? '切换到深色主题' : '切换到浅色主题';
+  btn.setAttribute('aria-label', btn.title);
+}
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem(THEME_KEY, t); } catch (e) {}
+  try {
+    const u = new URL(location.href);
+    if (u.searchParams.has('theme')) {
+      u.searchParams.delete('theme');
+      history.replaceState(null, '', u.pathname + (u.search || '') + u.hash);
+    }
+  } catch (e) {}
+  paintThemeBtn();
+}
+document.getElementById('themeBtn').onclick = () => setTheme(curTheme() === 'light' ? 'dark' : 'light');
+
+/* ---------- 答案展开状态 ---------- */
+const openAns = new Set();
+
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function ansBlock(d) {
+  const label = d.ans.length === 1 ? '参考 SQL' : '参考 SQL（' + d.ans.length + ' 段）';
+  const sqlHtml = '<div class="anslabel">' + label + '</div>' +
+    d.ans.map((x) => '<pre>' + esc(x) + '</pre>').join('');
+  return '<details class="ans" data-n="' + d.n + '"' + (openAns.has(d.n) ? ' open' : '') + '>' +
+    '<summary>参考答案 + 解析<span class="hint">— 先自己写，卡住再展开</span></summary>' +
+    '<div class="ansbody">' + sqlHtml +
+    '<div class="exp">' + d.exp + '</div></div></details>';
+}
+
+function card(d) {
+  const isDone = done.includes(d.n);
+  return '<div class="day' + (isDone ? ' done' : '') + '" data-n="' + d.n + '">' +
+    '<div class="left">' +
+      '<button class="dot" data-n="' + d.n + '" title="标记完成">' + (isDone ? '✓' : d.n) + '</button>' +
+      '<span class="dnum">' + String(d.n).padStart(2, '0') + '</span>' +
+    '</div>' +
+    '<div>' +
+      '<p class="t">' + esc(d.title) + '<span class="min">' + esc(d.min) + '</span></p>' +
+      '<div class="row learn"><span class="tag">学</span><p>' + d.learn + '</p></div>' +
+      '<div class="row todo"><span class="tag">做</span><p>' + d.todo + '</p></div>' +
+      '<div class="row check"><span class="tag">验收</span><p>' + d.check + '</p></div>' +
+      ansBlock(d) +
+    '</div>' +
+  '</div>';
+}
+
+function render() {
+  document.getElementById('list').innerHTML =
+    '<div class="note"><b>用法：</b>每题先只看「学 / 做 / 验收」，自己写一遍再展开答案。' +
+    '答案里的每一条 SQL 都在同一套账（7 张表、26,284 行销售明细）上跑过，解析中的数字全部来自真实结果。' +
+    '<br>做完 8 题，你手上应该有一份「分组八问」的对照表：什么时候该 COUNT(DISTINCT)、什么时候要先洗日期、什么时候必须分两层。' +
+    '这份东西比证书有用。</div>' +
+    DRILLS.map(card).join('');
+
+  document.querySelectorAll('.dot').forEach((b) => {
+    b.onclick = () => toggleDone(+b.dataset.n);
+  });
+  document.querySelectorAll('details.ans').forEach((el) => {
+    el.addEventListener('toggle', () => {
+      if (el.open) openAns.add(+el.dataset.n);
+      else openAns.delete(+el.dataset.n);
+    });
+  });
+  syncToggleAll();
+  paintProgress();
+}
+
+function toggleDone(n) {
+  const i = done.indexOf(n);
+  if (i >= 0) done.splice(i, 1);
+  else done.push(n);
+  try { localStorage.setItem(KEY, JSON.stringify(done)); } catch (e) {}
+  render();
+}
+
+function paintProgress() {
+  const pct = Math.round(done.length / DRILLS.length * 100);
+  document.getElementById('bar').style.width = pct + '%';
+  document.getElementById('pnum').textContent = done.length + ' / ' + DRILLS.length;
+}
+
+function syncToggleAll() {
+  const btn = document.getElementById('toggleAll');
+  const all = document.querySelectorAll('details.ans');
+  const opened = document.querySelectorAll('details.ans[open]');
+  const openNow = all.length > 0 && all.length === opened.length;
+  btn.textContent = openNow ? '收起全部答案' : '展开全部答案';
+  btn.dataset.all = openNow ? '1' : '0';
+}
+
+document.getElementById('toggleAll').onclick = () => {
+  const btn = document.getElementById('toggleAll');
+  const expand = btn.dataset.all !== '1';
+  document.querySelectorAll('details.ans').forEach((el) => {
+    el.open = expand;
+    if (expand) openAns.add(+el.dataset.n);
+    else openAns.delete(+el.dataset.n);
+  });
+  syncToggleAll();
+};
+
+render();
+paintThemeBtn();
+</script>
+</body>
+</html>

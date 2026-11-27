@@ -36,7 +36,7 @@ const PLAN = [
   { d: 6, p: 'P1', min: 50, t: 'GROUP BY：分组算',
     learn: 'GROUP BY 是「按某个维度分堆，每堆算一次聚合」。规则只有一条：SELECT 里的非聚合列，必须出现在 GROUP BY 里。',
     todo: '按 cust_code 汇总销售数量；再按 sku 汇总；再按月份汇总。取月份写 <code>substr(bill_date,1,7)</code> —— 但这套数据有斜杠日期，必须先 <code>REPLACE(bill_date,\'/\',\'-\')</code>，否则你会得到 44 个月份而不是 22 个。',
-    check: '能不看笔记写出「按客户汇总收入」的骨架。' },
+    check: '能不看笔记写出「按客户汇总收入」的骨架。写完觉得不够扎实，去做 <a class="golink" href="drill.html">分组专项 8 题 →</a>' },
   { d: 7, p: 'P1', min: 45, t: 'HAVING：给分组结果再筛一次',
     learn: 'WHERE 筛的是<b>行</b>，HAVING 筛的是<b>组</b>。执行顺序是 FROM → WHERE → GROUP BY → HAVING → SELECT → ORDER BY，所以 WHERE 里不能用聚合函数。',
     todo: '按客户汇总收入，只保留收入超过 500 万的客户。再试一次把条件写进 WHERE，看报什么错。',
